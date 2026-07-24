@@ -1,10 +1,12 @@
 rules_version = '2';
 
-// Every document lives under /users/{userId}/... and is only ever readable
-// or writable by that same signed-in user. Since each person runs their own
-// Firebase project (see docs/SETUP.md), this is mostly a safety net against
-// a leaked/misconfigured client rather than a multi-tenant boundary — but it
-// costs nothing to get right, so we do.
+// Every document lives under /users/{userId}/... (in practice, the
+// hal_clipItems, hal_notes, and hal_categories collections — see
+// ARCHITECTURE.md §2) and is only ever readable or writable by that same
+// signed-in user. Since each person runs their own Firebase project (see
+// docs/SETUP.md), this is mostly a safety net against a leaked/misconfigured
+// client rather than a multi-tenant boundary — but it costs nothing to get
+// right, so we do.
 service cloud.firestore {
   match /databases/{database}/documents {
 

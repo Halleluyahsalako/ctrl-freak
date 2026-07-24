@@ -4,7 +4,7 @@ Ctrl+Freak has no shared backend — you create your own Firebase project and co
 
 ## 1. Create a Firebase project
 
-1. Go to the [Firebase console](https://console.firebase.google.com/) and create a new project. Suggested project id: `ctrlfreak` (or `ctrlfreak-yourname` if that's taken).
+1. Go to the [Firebase console](https://console.firebase.google.com/) and create a new project. Project name: `halCtrlFreak`.
 2. In **Build > Firestore Database**, create a database in production mode (the rules in `firestore.rules` lock it down — don't switch to test mode).
 3. In **Build > Authentication > Sign-in method**, enable the **Google** provider.
 4. In **Project settings > Your apps**, add a **Web app** and copy the config values — these go into `FIREBASE_*` in your `.env`.

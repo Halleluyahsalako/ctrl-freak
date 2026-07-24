@@ -13,11 +13,13 @@ Two clients: **Android app** + **cross-browser extension**. No desktop app, noth
 | Realtime sync | Firebase Firestore + Auth | Push-based sync (<1s), free tier is plenty for personal use, Google Sign-In doubles as Drive auth. |
 | Bulk storage | Google Drive API | Files/images live in your own Drive — no storage bill, no separate account. Firestore just holds a pointer. |
 
+**Naming convention:** every class, function, variable, CSS class/id, the Android package id, and Firestore collection/field name carries a `hal` prefix — `hal_variableName`, `hal-css-class`, `HalClipItem`, `com.hal.ctrlfreak`, `hal_clipItems`. Top-level folder scaffolding (`extension/`, `android/`, `shared/`, `docs/`) stays conventional so the project shape is still recognizable to any dev or tool. Firebase project: `halCtrlFreak`.
+
 ## §2 Data model
 
 ```ts
 // a single synced clipboard entry — text or a Drive-backed image/file
-interface ClipItem {
+interface HalClipItem {
   id: string
   kind: "text" | "image" | "file" | "code"
   text?: string                 // inline for text/code
@@ -29,7 +31,7 @@ interface ClipItem {
 }
 
 // longer-form notes, separate from the transient clipboard feed
-interface Note {
+interface HalNote {
   id: string
   title: string
   body: string                  // markdown
@@ -38,12 +40,14 @@ interface Note {
   updatedAt: Timestamp
 }
 
-interface Category {
+interface HalCategory {
   id: string
   name: string
   color: string
 }
 ```
+
+Firestore collections: `hal_clipItems`, `hal_notes`, `hal_categories` (each nested under `/users/{uid}/...` — see `firestore.rules`; the `users` segment mirrors Firebase Auth's own concept rather than being part of our data model, so it's left unprefixed).
 
 ## §3 Sync flow
 
