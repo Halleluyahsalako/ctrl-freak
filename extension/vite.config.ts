@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         "hal-popup": "hal-popup.html",
+        "hal-notes": "hal-notes.html",
         "hal-background": "src/hal-background.ts",
       },
       output: {

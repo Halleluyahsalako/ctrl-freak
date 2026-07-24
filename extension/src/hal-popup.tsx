@@ -107,9 +107,17 @@ function HalPopup() {
     <main class="hal-popup">
       <div class="hal-header">
         <h1 class="hal-title">Ctrl+Freak</h1>
-        <button class="hal-link" onClick={halSignOut}>
-          sign out
-        </button>
+        <div>
+          <button
+            class="hal-link"
+            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("hal-notes.html") })}
+          >
+            notes
+          </button>
+          <button class="hal-link" onClick={halSignOut}>
+            sign out
+          </button>
+        </div>
       </div>
 
       <button class="hal-button" onClick={halHandleSyncNow} disabled={halBusy}>
