@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Every document lives under /users/{userId}/... and is only ever readable
+// or writable by that same signed-in user. Since each person runs their own
+// Firebase project (see docs/SETUP.md), this is mostly a safety net against
+// a leaked/misconfigured client rather than a multi-tenant boundary — but it
+// costs nothing to get right, so we do.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // anything not explicitly matched above is denied by default
+  }
+}

@@ -1,0 +1,22 @@
+# secrets
+.env
+.env.local
+*.keystore
+google-services.json
+
+# node
+node_modules/
+dist/
+build/
+*.log
+
+# android
+android/.gradle/
+android/local.properties
+android/*/build/
+android/.idea/
+android/*.iml
+
+# os
+.DS_Store
+Thumbs.db
