@@ -2,8 +2,13 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { halAuth } from "./hal-firebase";
-import { halSignIn, halSignOut } from "./hal-auth";
-import { halReadClipboardText, halWriteClipboardText } from "./hal-clipboard";
+import { halSignIn, halSignOut, halGetValidAccessToken } from "./hal-auth";
+import {
+  halReadClipboardSmart,
+  halWriteClipboardText,
+  halWriteImageToClipboard,
+} from "./hal-clipboard";
+import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
 import { halPushClip, halSubscribeToClips } from "./hal-sync";
 import type { HalClipItem } from "@shared/schema";
 
@@ -37,15 +42,33 @@ function HalPopup() {
     setHalBusy(true);
     setHalError(null);
     try {
-      const text = await halReadClipboardText();
-      if (text) {
+      const read = await halReadClipboardSmart();
+      if (!read) return;
+
+      if (read.kind === "text") {
         await halPushClip(halUser.uid, {
           kind: "text",
-          text,
+          text: read.text,
           pinned: false,
           originDevice: "browser",
         });
+        return;
       }
+
+      // image: upload to Drive first, then store the pointer
+      const accessToken = await halGetValidAccessToken();
+      const extension = read.mimeType.split("/")[1] ?? "png";
+      const driveFileId = await halUploadFileToDrive(
+        accessToken,
+        read.blob,
+        `hal-clip-${Date.now()}.${extension}`,
+      );
+      await halPushClip(halUser.uid, {
+        kind: "image",
+        driveFileId,
+        pinned: false,
+        originDevice: "browser",
+      });
     } catch (err) {
       setHalError((err as Error).message);
     } finally {
@@ -54,7 +77,18 @@ function HalPopup() {
   }
 
   async function halHandlePaste(clip: HalClipItem) {
-    if (clip.text) await halWriteClipboardText(clip.text);
+    setHalError(null);
+    try {
+      if (clip.kind === "image" && clip.driveFileId) {
+        const accessToken = await halGetValidAccessToken();
+        const blob = await halFetchDriveFileBlob(accessToken, clip.driveFileId);
+        await halWriteImageToClipboard(blob);
+      } else if (clip.text) {
+        await halWriteClipboardText(clip.text);
+      }
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
   }
 
   if (!halUser) {
@@ -94,7 +128,7 @@ function HalPopup() {
               onClick={() => halHandlePaste(clip)}
               title="Click to copy"
             >
-              {clip.text}
+              {clip.kind === "image" ? "[image]" : clip.text}
             </li>
           ))}
         </ul>
