@@ -14,8 +14,5 @@
   "host_permissions": [
     "https://*.googleapis.com/*",
     "https://*.firebaseio.com/*"
-  ],
-  "icons": {
-    "128": "icons/icon-128.png"
-  }
+  ]
 }

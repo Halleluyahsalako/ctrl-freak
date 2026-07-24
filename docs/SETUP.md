@@ -16,8 +16,9 @@ The same Google Cloud project backs your Firebase project — you don't need a s
 1. Go to the [Google Cloud console](https://console.cloud.google.com/), select the project matching your Firebase project.
 2. Under **APIs & Services > Library**, enable the **Google Drive API**.
 3. Under **APIs & Services > OAuth consent screen**, set it to **External** (unless you have a Workspace account) and add your own Google account as a test user.
-4. Under **APIs & Services > Credentials**, create an **OAuth client ID**. Add `https://www.googleapis.com/auth/drive.file` as a scope — this restricts access to only the files Ctrl+Freak itself creates, not your whole Drive.
+4. Under **APIs & Services > Credentials**, create an **OAuth client ID** of type **Web application** (not "Chrome Extension" — the extension signs in via `chrome.identity.launchWebAuthFlow`, which uses the standard web OAuth flow). Add `https://www.googleapis.com/auth/drive.file` as a scope — this restricts access to only the files Ctrl+Freak itself creates, not your whole Drive.
 5. Copy the client ID into `GOOGLE_OAUTH_CLIENT_ID` in your `.env`.
+6. Load the unpacked extension once (see `extension/README.md`), then copy its ID from `chrome://extensions`. Back in the OAuth client's settings, add `https://<extension-id>.chromiumapp.org/` as an **Authorized redirect URI** — without this, sign-in from the extension will fail with a redirect_uri_mismatch error.
 
 ## 3. Deploy the Firestore security rules
 

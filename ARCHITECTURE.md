@@ -56,6 +56,8 @@ Firestore collections: `hal_clipItems`, `hal_notes`, `hal_categories` (each nest
 3. Realtime listener on Device B fires instantly — no polling
 4. Device B pastes text directly, or lazy-fetches the Drive file on open
 
+**Real constraint on step 1 (extension side):** browsers don't let an extension silently watch the system clipboard in the background — there's no "clipboard changed" event a service worker can subscribe to. Reading it requires a user gesture (opening the popup, or a keyboard shortcut via the `commands` API). The read itself still sees whatever's on the OS clipboard system-wide — copied from Notepad, Explorer, anywhere — not just from web pages. So the extension side of sync is "press a hotkey / open the popup to grab-and-push," not fully passive. The Android side can be closer to passive via a foreground service, but that's a Phase 1 detail to confirm once we get there.
+
 ## §4 MVP roadmap
 
 - **Phase 0 — Foundations:** Firebase project, Google OAuth + Drive scopes, shared schema, `.env.example` + setup docs so credentials never live in the repo, MIT license + README. No UI yet.
