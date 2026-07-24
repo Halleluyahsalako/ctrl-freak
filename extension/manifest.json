@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Ctrl+Freak",
+  "version": "0.1.0",
+  "description": "Clipboard, note, and file sync with your phone — no WhatsApp required.",
+  "action": {
+    "default_popup": "hal-popup.html"
+  },
+  "background": {
+    "service_worker": "hal-background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "identity"],
+  "host_permissions": [
+    "https://*.googleapis.com/*",
+    "https://*.firebaseio.com/*"
+  ],
+  "icons": {
+    "128": "icons/icon-128.png"
+  }
+}
