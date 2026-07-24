@@ -9,7 +9,7 @@ import {
   halWriteImageToClipboard,
 } from "./hal-clipboard";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
-import { halPushClip, halSubscribeToClips } from "./hal-sync";
+import { halPushClip, halSubscribeToClips, halSetClipPinned } from "./hal-sync";
 import type { HalClipItem } from "@shared/schema";
 
 function HalPopup() {
@@ -76,6 +76,12 @@ function HalPopup() {
     }
   }
 
+  async function halHandleTogglePin(e: Event, clip: HalClipItem) {
+    e.stopPropagation();
+    if (!halUser) return;
+    await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
+  }
+
   async function halHandlePaste(clip: HalClipItem) {
     setHalError(null);
     try {
@@ -129,16 +135,27 @@ function HalPopup() {
         <p class="hal-empty">Nothing synced yet.</p>
       ) : (
         <ul class="hal-clip-list">
-          {halClips.map((clip) => (
-            <li
-              key={clip.id}
-              class="hal-clip-item"
-              onClick={() => halHandlePaste(clip)}
-              title="Click to copy"
-            >
-              {clip.kind === "image" ? "[image]" : clip.text}
-            </li>
-          ))}
+          {[...halClips]
+            .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+            .map((clip) => (
+              <li
+                key={clip.id}
+                class="hal-clip-item"
+                onClick={() => halHandlePaste(clip)}
+                title="Click to copy"
+              >
+                <button
+                  class={`hal-pin ${clip.pinned ? "hal-pinned" : ""}`}
+                  onClick={(e) => halHandleTogglePin(e, clip)}
+                  title={clip.pinned ? "Unpin" : "Pin"}
+                >
+                  *
+                </button>
+                <span class="hal-clip-text">
+                  {clip.kind === "image" ? "[image]" : clip.text}
+                </span>
+              </li>
+            ))}
         </ul>
       )}
     </main>

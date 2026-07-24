@@ -25,6 +25,7 @@ function HalNotesApp() {
   const [halBody, setHalBody] = useState("");
   const [halNoteCategoryId, setHalNoteCategoryId] = useState<string>("");
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
+  const [halSearch, setHalSearch] = useState("");
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -42,10 +43,13 @@ function HalNotesApp() {
     };
   }, [halUser]);
 
-  const halVisibleNotes =
-    halActiveCategoryId === "all"
-      ? halNotes
-      : halNotes.filter((n) => n.categoryId === halActiveCategoryId);
+  const halVisibleNotes = halNotes
+    .filter((n) => halActiveCategoryId === "all" || n.categoryId === halActiveCategoryId)
+    .filter((n) => {
+      if (!halSearch.trim()) return true;
+      const needle = halSearch.trim().toLowerCase();
+      return n.title.toLowerCase().includes(needle) || n.body.toLowerCase().includes(needle);
+    });
 
   function halSelectNote(note: HalNote | null) {
     setHalSelectedNoteId(note?.id ?? null);
@@ -134,6 +138,13 @@ function HalNotesApp() {
             Add
           </button>
         </div>
+
+        <input
+          class="hal-input"
+          placeholder="Search notes…"
+          value={halSearch}
+          onInput={(e) => setHalSearch((e.target as HTMLInputElement).value)}
+        />
 
         <ul class="hal-note-list">
           {halVisibleNotes.map((note) => (

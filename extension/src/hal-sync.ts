@@ -1,6 +1,8 @@
 import {
   collection,
+  doc,
   addDoc,
+  updateDoc,
   onSnapshot,
   query,
   orderBy,
@@ -23,6 +25,14 @@ export async function halPushClip(
     ...clip,
     createdAt: Date.now(),
   });
+}
+
+export async function halSetClipPinned(
+  uid: string,
+  clipId: string,
+  pinned: boolean,
+): Promise<void> {
+  await updateDoc(doc(halDb, "users", uid, "hal_clipItems", clipId), { pinned });
 }
 
 // Returns an unsubscribe function — call it when the popup closes.

@@ -14,5 +14,14 @@
   "host_permissions": [
     "https://*.googleapis.com/*",
     "https://*.firebaseio.com/*"
-  ]
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Open Ctrl+Freak"
+    }
+  }
 }

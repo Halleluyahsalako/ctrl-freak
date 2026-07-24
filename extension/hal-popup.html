@@ -63,16 +63,36 @@
         padding: 0;
       }
       .hal-clip-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
         padding: 0.5rem;
         border-bottom: 1px solid #2a2c3d;
         font-size: 0.8rem;
         cursor: pointer;
+      }
+      .hal-clip-item:hover {
+        background: #191b27;
+      }
+      .hal-clip-text {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .hal-clip-item:hover {
-        background: #191b27;
+      .hal-pin {
+        background: none;
+        border: 1px solid #2a2c3d;
+        color: #6b6d84;
+        border-radius: 3px;
+        width: 20px;
+        height: 20px;
+        line-height: 1;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
+      .hal-pinned {
+        color: #d99b47;
+        border-color: #d99b47;
       }
     </style>
   </head>
