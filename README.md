@@ -15,7 +15,11 @@ Full design decisions and data model: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Status
 
-Phase 0 (foundations) in progress. See the roadmap in `ARCHITECTURE.md §4`.
+The **browser extension** is a fully working client — sign-in, clipboard sync (text + image via Drive), notes/categories CRUD — verified with `tsc`/`vite build`, pending a live test once your `.env` and Firebase console setup are finished.
+
+The **Android app** is planned in detail (see [`docs/ANDROID_PLAN.md`](docs/ANDROID_PLAN.md)) but not built — this machine has no Java/Android SDK to verify a hand-written Gradle project against, so it needs Android Studio.
+
+Full roadmap: `ARCHITECTURE.md §4`.
 
 ## Setup
 

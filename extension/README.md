@@ -15,4 +15,4 @@ Requires the repo-root `.env` to be filled in first — see `../docs/SETUP.md`.
 
 ## Status
 
-Scaffolded (manifest, popup, background service worker, Firebase init) but not yet wired to real sync logic — that's Phase 1 (see `../ARCHITECTURE.md §4`).
+Fully wired: Google sign-in, clipboard sync (text + image via Drive) from the popup, and full notes/categories CRUD from the `hal-notes.html` page (open via the "notes" link in the popup). `tsc --noEmit` and `vite build` both pass. Not yet tested against a real Firebase project/live sign-in — that's the next step once `.env` is filled in.

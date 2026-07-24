@@ -60,12 +60,14 @@ Firestore collections: `hal_clipItems`, `hal_notes`, `hal_categories` (each nest
 
 ## §4 MVP roadmap
 
-- **Phase 0 — Foundations:** Firebase project, Google OAuth + Drive scopes, shared schema, `.env.example` + setup docs so credentials never live in the repo, MIT license + README. No UI yet.
+- **Phase 0 — Foundations:** Firebase project, Google OAuth + Drive scopes, shared schema, `.env.example` + setup docs so credentials never live in the repo, MIT license + README. ✅ Done.
 - **Phase 1 — Clipboard sync core:** text + image sync working both directions, extension ⇄ Android. This is the WhatsApp replacement — don't move on until it's instant and reliable.
+  - Extension: ✅ done (sign-in, text + image sync via Drive, verified with `tsc`/`vite build`).
+  - Android: 📋 planned, not built — see `docs/ANDROID_PLAN.md`. No Java/Android SDK on this machine to verify a hand-written Gradle project, so this needs Android Studio's wizard plus the plan doc, likely in a session with that toolchain available.
 - **Phase 2 — Notes, categories, CRUD:** full create/edit/delete on notes and categories from either client, dark/mono UI applied throughout.
-- **Phase 3 — Polish:** search across notes + clipboard history, pinned items, code-snippet syntax highlighting.
-
-**Timing:** this memo is the full spend for this week. Start Phase 0 when you say "Start" (planned: Friday).
+  - Extension: ✅ done (`hal-notes.html`, full-page CRUD, verified).
+  - Android: 📋 planned alongside Phase 1 in `docs/ANDROID_PLAN.md`.
+- **Phase 3 — Polish:** search across notes + clipboard history, pinned items, code-snippet syntax highlighting. Not started.
 
 ## §5 Feature backlog (post-MVP)
 
@@ -73,7 +75,7 @@ Firestore collections: `hal_clipItems`, `hal_notes`, `hal_categories` (each nest
 |---|---|
 | Pinned clipboard history (browse last N, not just current) | Next |
 | Code snippet syntax highlighting | Next |
-| Android share-sheet integration ("Share to Ctrl+Freak") | Next |
+| Android share-sheet integration ("Share to Ctrl+Freak") | Folded into Android Phase 1 — see `docs/ANDROID_PLAN.md §4` |
 | Global paste hotkey in the extension | Later |
 | Calendar / quick tasks tied to categories (not a full calendar app) | Later |
 | Offline queue — hold writes locally, flush on reconnect | Later |
@@ -94,4 +96,4 @@ Planned to be public, with a LinkedIn writeup — this shapes Phase 0, not somet
 - **Drive quota** — any cap to enforce client-side before a big file eats into your existing Drive usage?
 
 ---
-Status: draft, awaiting build window. Next: Phase 0 on your signal.
+Status: extension is a fully working client (sign-in, clipboard sync, notes/categories CRUD) pending your live test once `.env`/Firebase console setup is finished. Android is planned (`docs/ANDROID_PLAN.md`) but not built — needs a session with Java/Android SDK available.
