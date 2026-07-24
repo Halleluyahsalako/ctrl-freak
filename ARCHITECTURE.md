@@ -1,4 +1,4 @@
-# ctrl+sync — architecture memo (v0.1)
+# Ctrl+Freak — architecture memo (v0.1)
 
 A clipboard/note/file sync layer between phone and computer, replacing WhatsApp-to-self.
 Two clients: **Android app** + **cross-browser extension**. No desktop app, nothing heavy running in the background.
@@ -67,7 +67,7 @@ interface Category {
 |---|---|
 | Pinned clipboard history (browse last N, not just current) | Next |
 | Code snippet syntax highlighting | Next |
-| Android share-sheet integration ("Share to ctrl+sync") | Next |
+| Android share-sheet integration ("Share to Ctrl+Freak") | Next |
 | Global paste hotkey in the extension | Later |
 | Calendar / quick tasks tied to categories (not a full calendar app) | Later |
 | Offline queue — hold writes locally, flush on reconnect | Later |

@@ -1,4 +1,4 @@
-# ctrl+sync
+# Ctrl+Freak
 
 A lightweight clipboard, note, and file sync layer between your phone and your computer — text, images, and files copied on one device show up on the other in under a second.
 

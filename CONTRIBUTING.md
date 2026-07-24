@@ -1,6 +1,6 @@
 # Contributing
 
-ctrl+sync is a personal project, open sourced so others can self-host it. Contributions are welcome, but there's no formal process yet — this will grow as the project does.
+Ctrl+Freak is a personal project, open sourced so others can self-host it. Contributions are welcome, but there's no formal process yet — this will grow as the project does.
 
 ## Before opening a PR
 
