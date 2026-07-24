@@ -10,7 +10,7 @@
     "service_worker": "hal-background.js",
     "type": "module"
   },
-  "permissions": ["storage", "identity"],
+  "permissions": ["storage", "identity", "clipboardRead", "clipboardWrite"],
   "host_permissions": [
     "https://*.googleapis.com/*",
     "https://*.firebaseio.com/*"
