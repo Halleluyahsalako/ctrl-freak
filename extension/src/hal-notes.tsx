@@ -68,6 +68,7 @@ function HalNotesApp() {
   const [halMediaThumbs, setHalMediaThumbs] = useState<Record<string, string>>({});
   const [halCategories, setHalCategories] = useState<HalCategory[]>([]);
   const [halActiveCategoryId, setHalActiveCategoryId] = useState<string | "all">("all");
+  const [halCategoryFlyoutId, setHalCategoryFlyoutId] = useState<string | null>(null);
   const [halSearch, setHalSearch] = useState("");
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
 
@@ -99,8 +100,19 @@ function HalNotesApp() {
   const halFileInputRef = useRef<HTMLInputElement>(null);
   const halUploadAttachmentRef = useRef<(blob: Blob, name: string) => void>(() => {});
   const halAutosaveTimerRef = useRef<number | null>(null);
+  // Mirrors halSelectedNoteId synchronously — a plain closure over the state
+  // value goes stale if a second debounced autosave fires while the first
+  // create() is still in flight (network round trip), and both would see
+  // "no id yet" and each create their own note. Reading/writing this ref
+  // instead keeps every in-flight autosave looking at the same live answer.
+  const halSelectedNoteIdRef = useRef<string | null>(null);
+  const halCreatingNoteRef = useRef(false);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
+
+  useEffect(() => {
+    halSelectedNoteIdRef.current = halSelectedNoteId;
+  }, [halSelectedNoteId]);
 
   useEffect(() => {
     if (!halOpenMenu) return;
@@ -110,6 +122,15 @@ function HalNotesApp() {
     document.addEventListener("mousedown", halHandleOutsideClick);
     return () => document.removeEventListener("mousedown", halHandleOutsideClick);
   }, [halOpenMenu]);
+
+  useEffect(() => {
+    if (!halCategoryFlyoutId) return;
+    function halHandleOutsideClick(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest(".hal-category-anchor")) setHalCategoryFlyoutId(null);
+    }
+    document.addEventListener("mousedown", halHandleOutsideClick);
+    return () => document.removeEventListener("mousedown", halHandleOutsideClick);
+  }, [halCategoryFlyoutId]);
 
   // Real autosave — debounced create-then-update, not just a manual Save
   // button. This is also what makes "attach a file before the note exists
@@ -129,12 +150,23 @@ function HalNotesApp() {
         pinned: halNotePinned,
       };
       try {
-        if (halSelectedNoteId) {
-          await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
-        } else {
-          const newId = await halCreateNote(halUser.uid, payload);
-          setHalSelectedNoteId(newId);
+        const currentId = halSelectedNoteIdRef.current;
+        if (currentId) {
+          await halUpdateNote(halUser.uid, currentId, payload);
+        } else if (!halCreatingNoteRef.current) {
+          halCreatingNoteRef.current = true;
+          try {
+            const newId = await halCreateNote(halUser.uid, payload);
+            halSelectedNoteIdRef.current = newId;
+            setHalSelectedNoteId(newId);
+          } finally {
+            halCreatingNoteRef.current = false;
+          }
         }
+        // else: a create from an earlier debounce tick is already in
+        // flight — skip this tick rather than race it into a duplicate
+        // note. The next autosave (or the trailing one once typing stops)
+        // will pick up the latest content once halSelectedNoteIdRef is set.
         setHalUpdatedAt(Date.now());
       } catch (err) {
         console.error("hal:", err);
@@ -301,10 +333,23 @@ function HalNotesApp() {
       pinned: halNotePinned,
     };
     try {
-      if (halSelectedNoteId) {
-        await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
+      const currentId = halSelectedNoteIdRef.current;
+      if (currentId) {
+        await halUpdateNote(halUser.uid, currentId, payload);
+      } else if (halCreatingNoteRef.current) {
+        // An autosave create is already in flight for this same draft —
+        // don't start a second one. It'll land shortly and this edit is
+        // already in `payload`'s source state, so nothing is lost.
+        halToast("Saving…", "neutral");
+        return;
       } else {
-        await halCreateNote(halUser.uid, payload);
+        halCreatingNoteRef.current = true;
+        try {
+          const newId = await halCreateNote(halUser.uid, payload);
+          halSelectedNoteIdRef.current = newId;
+        } finally {
+          halCreatingNoteRef.current = false;
+        }
         halSelectNote(null);
       }
       halToast("Saved", "success");
@@ -616,20 +661,50 @@ function HalNotesApp() {
               <span class="hal-cat-name">All notes</span>
               <span class="hal-cat-count">{halNotes.length}</span>
             </div>
-            {halCategories.map((cat, i) => (
-              <div
-                key={cat.id}
-                class={`hal-cat-row ${halActiveCategoryId === cat.id ? "hal-selected" : ""}`}
-                onClick={() => setHalActiveCategoryId(cat.id)}
-              >
-                <span class="hal-dot" style={{ background: HAL_CATEGORY_PALETTE[i % HAL_CATEGORY_PALETTE.length] }} />
-                <span class="hal-cat-name">{cat.name}</span>
-                <span class="hal-cat-count">{halNotes.filter((n) => n.categoryId === cat.id).length}</span>
-                <button class="hal-cat-remove" onClick={(e) => halHandleDeleteCategory(e, cat.id)}>
-                  ×
-                </button>
-              </div>
-            ))}
+            {halCategories.map((cat, i) => {
+              const halCatNotes = halNotes.filter((n) => n.categoryId === cat.id);
+              const halCatOrdered = [...halCatNotes.filter((n) => n.pinned), ...halCatNotes.filter((n) => !n.pinned)];
+              return (
+                <div key={cat.id} class="hal-cat-row-wrap hal-category-anchor">
+                  <div
+                    class={`hal-cat-row ${halCategoryFlyoutId === cat.id ? "hal-selected" : ""}`}
+                    onClick={() => setHalCategoryFlyoutId(halCategoryFlyoutId === cat.id ? null : cat.id)}
+                  >
+                    <span class="hal-dot" style={{ background: HAL_CATEGORY_PALETTE[i % HAL_CATEGORY_PALETTE.length] }} />
+                    <span class="hal-cat-name">{cat.name}</span>
+                    <span class="hal-cat-count">{halCatNotes.length}</span>
+                    <button class="hal-cat-remove" onClick={(e) => halHandleDeleteCategory(e, cat.id)}>
+                      ×
+                    </button>
+                  </div>
+                  {halCategoryFlyoutId === cat.id && (
+                    <div class="hal-category-flyout">
+                      <div class="hal-flyout-header">
+                        <span class="hal-flyout-title">{cat.name}</span>
+                        <span class="hal-flyout-count">{halCatNotes.length}</span>
+                      </div>
+                      {halCatOrdered.length === 0 ? (
+                        <p class="hal-flyout-empty">No notes in this category yet.</p>
+                      ) : (
+                        halCatOrdered.map((note) => (
+                          <div
+                            key={note.id}
+                            class="hal-flyout-row"
+                            onClick={() => {
+                              halSelectNote(note);
+                              setHalCategoryFlyoutId(null);
+                            }}
+                          >
+                            <span class="hal-recent-title">{note.title || "Untitled note"}</span>
+                            {note.pinned && <span style={{ color: "var(--accent)" }}><HalIconPin size={11} /></span>}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <div class="hal-add-category">
               <input
                 placeholder="New category"
