@@ -26,6 +26,7 @@ function HalNotesApp() {
   const [halNoteCategoryId, setHalNoteCategoryId] = useState<string>("");
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
   const [halSearch, setHalSearch] = useState("");
+  const [halError, setHalError] = useState<string | null>(null);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -60,32 +61,57 @@ function HalNotesApp() {
 
   async function halHandleSave() {
     if (!halUser || !halTitle.trim()) return;
+    setHalError(null);
     const payload = {
       title: halTitle.trim(),
       body: halBody,
       categoryId: halNoteCategoryId || undefined,
       attachments: [],
     };
-    if (halSelectedNoteId) {
-      await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
-    } else {
-      await halCreateNote(halUser.uid, payload);
-      halSelectNote(null);
+    try {
+      if (halSelectedNoteId) {
+        await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
+      } else {
+        await halCreateNote(halUser.uid, payload);
+        halSelectNote(null);
+      }
+    } catch (err) {
+      setHalError((err as Error).message);
     }
   }
 
   async function halHandleDelete(noteId: string) {
     if (!halUser) return;
-    await halDeleteNote(halUser.uid, noteId);
-    if (halSelectedNoteId === noteId) halSelectNote(null);
+    setHalError(null);
+    try {
+      await halDeleteNote(halUser.uid, noteId);
+      if (halSelectedNoteId === noteId) halSelectNote(null);
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
   }
 
   async function halHandleAddCategory() {
     if (!halUser || !halNewCategoryName.trim()) return;
+    setHalError(null);
     const color =
       HAL_CATEGORY_COLORS[halCategories.length % HAL_CATEGORY_COLORS.length];
-    await halCreateCategory(halUser.uid, { name: halNewCategoryName.trim(), color });
-    setHalNewCategoryName("");
+    try {
+      await halCreateCategory(halUser.uid, { name: halNewCategoryName.trim(), color });
+      setHalNewCategoryName("");
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
+  }
+
+  async function halHandleDeleteCategory(categoryId: string) {
+    if (!halUser) return;
+    setHalError(null);
+    try {
+      await halDeleteCategory(halUser.uid, categoryId);
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
   }
 
   if (!halUser) {
@@ -100,6 +126,7 @@ function HalNotesApp() {
     <main class="hal-notes-app">
       <aside class="hal-sidebar">
         <h1 class="hal-title">Ctrl+Freak — Notes</h1>
+        {halError && <p class="hal-error">{halError}</p>}
 
         <ul class="hal-category-list">
           <li
@@ -119,7 +146,7 @@ function HalNotesApp() {
               </span>
               <button
                 class="hal-link"
-                onClick={() => halDeleteCategory(halUser.uid, cat.id)}
+                onClick={() => halHandleDeleteCategory(cat.id)}
               >
                 ×
               </button>
