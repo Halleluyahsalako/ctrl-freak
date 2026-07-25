@@ -3,6 +3,7 @@ package com.hal.ctrlfreak
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.PermMedia
 import androidx.compose.material.icons.outlined.StickyNote2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -39,6 +42,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
 import com.google.firebase.auth.FirebaseAuth
@@ -55,6 +60,7 @@ import com.hal.ctrlfreak.data.HalClipItem
 import com.hal.ctrlfreak.data.HalClipKind
 import com.hal.ctrlfreak.data.HalDevice
 import com.hal.ctrlfreak.data.HalNote
+import com.hal.ctrlfreak.drive.halFetchDriveFileBytes
 import com.hal.ctrlfreak.drive.halUploadFileToDrive
 import com.hal.ctrlfreak.sync.halClearAllClips
 import com.hal.ctrlfreak.sync.halCreateCategory
@@ -72,15 +78,17 @@ import com.hal.ctrlfreak.sync.halUpdateNote
 import com.hal.ctrlfreak.ui.components.CfSnackbar
 import com.hal.ctrlfreak.ui.components.CfSnackbarKind
 import com.hal.ctrlfreak.ui.screens.CfClipboardScreen
+import com.hal.ctrlfreak.ui.screens.CfMediaScreen
 import com.hal.ctrlfreak.ui.screens.CfNoteEditorScreen
 import com.hal.ctrlfreak.ui.screens.CfNotesScreen
 import com.hal.ctrlfreak.ui.screens.CfSignInScreen
+import com.hal.ctrlfreak.ui.screens.halBuildMediaItems
 import com.hal.ctrlfreak.ui.theme.CfColor
 import com.hal.ctrlfreak.ui.theme.CfTheme
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
-private enum class HalTab { CLIPBOARD, NOTES }
+private enum class HalTab { CLIPBOARD, NOTES, MEDIA }
 
 class HalMainActivity : ComponentActivity() {
     // A plain `intent` read only happens once, at setContent's first
@@ -151,6 +159,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     var editPinned by remember { mutableStateOf(false) }
     var editAttachments by remember { mutableStateOf<List<HalAttachment>>(emptyList()) }
     var uploadingAttachmentNames by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var mediaThumbs by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
 
     var pendingShareIntent by remember { mutableStateOf<Intent?>(null) }
     // Reacts to sharedIntent changing (including a share arriving while the
@@ -236,6 +245,30 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                     uploadingAttachmentNames = uploadingAttachmentNames - name
                 }
             }
+        }
+    }
+
+    // Media tab thumbnails — fetched lazily (only while that tab is open,
+    // only for images not already cached) so switching tabs never re-fetches
+    // and browsing Clipboard/Notes never pays for a Drive round trip.
+    LaunchedEffect(tab, notes, clips) {
+        if (tab != HalTab.MEDIA) return@LaunchedEffect
+        val items = halBuildMediaItems(notes, clips)
+        val toFetch = items.filter { it.isImage && !mediaThumbs.containsKey(it.driveFileId) }
+        if (toFetch.isEmpty()) return@LaunchedEffect
+        try {
+            val token = halEnsureDriveAccessToken()
+            for (item in toFetch) {
+                try {
+                    val bytes = halFetchDriveFileBytes(token, item.driveFileId)
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                    mediaThumbs = mediaThumbs + (item.driveFileId to bitmap.asImageBitmap())
+                } catch (e: Exception) {
+                    // skip this one, keep loading the rest
+                }
+            }
+        } catch (e: Exception) {
+            halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
         }
     }
 
@@ -345,6 +378,24 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                             )
                         },
                         label = { Text("notes") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CfColor.Accent,
+                            selectedTextColor = CfColor.Accent,
+                            unselectedIconColor = CfColor.InkFaint,
+                            unselectedTextColor = CfColor.InkFaint,
+                            indicatorColor = CfColor.Surface,
+                        ),
+                    )
+                    NavigationBarItem(
+                        selected = tab == HalTab.MEDIA,
+                        onClick = { tab = HalTab.MEDIA },
+                        icon = {
+                            Icon(
+                                if (tab == HalTab.MEDIA) Icons.Filled.PermMedia else Icons.Outlined.PermMedia,
+                                contentDescription = "Media",
+                            )
+                        },
+                        label = { Text("media") },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = CfColor.Accent,
                             selectedTextColor = CfColor.Accent,
@@ -489,6 +540,15 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                                 halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
                             }
                         }
+                    },
+                )
+
+                HalTab.MEDIA -> CfMediaScreen(
+                    items = halBuildMediaItems(notes, clips),
+                    thumbs = mediaThumbs,
+                    onOpenItem = { item ->
+                        val url = "https://drive.google.com/file/d/${item.driveFileId}/view"
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                 )
             }
