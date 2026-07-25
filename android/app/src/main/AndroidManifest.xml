@@ -29,6 +29,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+            <!-- Gallery apps' multi-select share (e.g. Samsung Gallery) sends
+                 ACTION_SEND_MULTIPLE, not ACTION_SEND — without this filter
+                 the app silently never appeared as a share target for that
+                 flow at all, independent of any sharesheet ranking/caching. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
     </application>
