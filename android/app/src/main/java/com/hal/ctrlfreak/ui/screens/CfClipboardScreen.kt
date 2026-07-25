@@ -25,12 +25,17 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentPasteOff
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,9 +62,25 @@ fun CfClipboardScreen(
     onSyncNow: () -> Unit,
     onCopyBack: (HalClipItem) -> Unit,
     onTogglePin: (HalClipItem) -> Unit,
+    onClearAll: () -> Unit,
+    onDeleteSelected: (Set<String>) -> Unit,
 ) {
     val pinned = clips.filter { it.pinned }
     val recent = clips.filterNot { it.pinned }
+
+    var selectMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    var confirmDeleteSelected by remember { mutableStateOf(false) }
+
+    fun toggleSelectMode() {
+        selectMode = !selectMode
+        selectedIds = emptySet()
+    }
+
+    fun toggleSelected(id: String) {
+        selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(CfColor.Background)) {
         // top bar
@@ -91,11 +112,43 @@ fun CfClipboardScreen(
             modifier = Modifier.padding(horizontal = CfSpace.S14),
         )
 
-        Text(
-            "${clips.size} recent · pinned first",
-            style = CfType.Label,
-            modifier = Modifier.padding(start = CfSpace.S14, top = CfSpace.S6, bottom = CfSpace.S12),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = CfSpace.S14, vertical = CfSpace.S6),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("${clips.size} recent · pinned first", style = CfType.Label)
+            Row(horizontalArrangement = Arrangement.spacedBy(CfSpace.S11)) {
+                if (selectMode) {
+                    TextButton(onClick = { toggleSelectMode() }) {
+                        Text("Cancel", style = CfType.Label.copy(color = CfColor.InkMuted))
+                    }
+                } else {
+                    TextButton(onClick = { toggleSelectMode() }, enabled = clips.isNotEmpty()) {
+                        Text("Select", style = CfType.Label.copy(color = CfColor.InkFaint))
+                    }
+                    TextButton(onClick = { confirmClearAll = true }, enabled = clips.isNotEmpty()) {
+                        Text("Clear all", style = CfType.Label.copy(color = CfColor.Danger))
+                    }
+                }
+            }
+        }
+
+        if (selectMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CfSpace.S14)
+                    .padding(bottom = CfSpace.S9),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${selectedIds.size} selected", style = CfType.Label)
+                TextButton(onClick = { confirmDeleteSelected = true }, enabled = selectedIds.isNotEmpty()) {
+                    Text("Delete", style = CfType.Label.copy(color = CfColor.Danger))
+                }
+            }
+        }
 
         if (clips.isEmpty()) {
             CfEmptyState(
@@ -112,21 +165,78 @@ fun CfClipboardScreen(
                 verticalArrangement = Arrangement.spacedBy(CfSpace.S9),
             ) {
                 items(pinned + recent, key = { it.id }) { clip ->
-                    CfClipCard(clip = clip, onClick = { onCopyBack(clip) }, onTogglePin = { onTogglePin(clip) })
+                    CfClipCard(
+                        clip = clip,
+                        selectMode = selectMode,
+                        selected = selectedIds.contains(clip.id),
+                        onClick = { if (selectMode) toggleSelected(clip.id) else onCopyBack(clip) },
+                        onTogglePin = { onTogglePin(clip) },
+                    )
                 }
             }
         }
     }
+
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            containerColor = CfColor.Surface,
+            shape = RoundedCornerShape(CfRadius.Large),
+            title = { Text("Clear all clipboard items?", style = CfType.ScreenTitle) },
+            text = { Text("This deletes all ${clips.size} synced items on every device. This can't be undone.", style = CfType.BodyMuted) },
+            confirmButton = {
+                TextButton(onClick = { confirmClearAll = false; onClearAll() }) {
+                    Text("Clear all", style = CfType.Body.copy(color = CfColor.Danger))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearAll = false }) {
+                    Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
+                }
+            },
+        )
+    }
+
+    if (confirmDeleteSelected) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSelected = false },
+            containerColor = CfColor.Surface,
+            shape = RoundedCornerShape(CfRadius.Large),
+            title = { Text("Delete ${selectedIds.size} item${if (selectedIds.size == 1) "" else "s"}?", style = CfType.ScreenTitle) },
+            text = { Text("This can't be undone.", style = CfType.BodyMuted) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteSelected = false
+                    onDeleteSelected(selectedIds)
+                    selectMode = false
+                    selectedIds = emptySet()
+                }) {
+                    Text("Delete", style = CfType.Body.copy(color = CfColor.Danger))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteSelected = false }) {
+                    Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun CfClipCard(clip: HalClipItem, onClick: () -> Unit, onTogglePin: () -> Unit) {
+private fun CfClipCard(
+    clip: HalClipItem,
+    selectMode: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit,
+) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val fill = if (pressed) CfColor.SurfaceRaised else CfColor.Surface
     val border = if (clip.pinned) CfColor.Accent else CfColor.Rule
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(CfRadius.Card))
@@ -134,47 +244,73 @@ private fun CfClipCard(clip: HalClipItem, onClick: () -> Unit, onTogglePin: () -
             .border(1.dp, border, RoundedCornerShape(CfRadius.Card))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = CfSpace.S10, horizontal = CfSpace.S11),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
-            if (clip.kind == HalClipKind.IMAGE) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(CfRadius.Small))
-                            .background(CfColor.Inset)
-                            .border(1.dp, CfColor.Rule, RoundedCornerShape(CfRadius.Small)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Filled.Image, contentDescription = null, tint = CfColor.Cyan, modifier = Modifier.size(16.dp))
+        if (selectMode) {
+            CfCheckbox(checked = selected, modifier = Modifier.padding(top = 2.dp, end = CfSpace.S9))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
+                if (clip.kind == HalClipKind.IMAGE) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(CfRadius.Small))
+                                .background(CfColor.Inset)
+                                .border(1.dp, CfColor.Rule, RoundedCornerShape(CfRadius.Small)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Filled.Image, contentDescription = null, tint = CfColor.Cyan, modifier = Modifier.size(16.dp))
+                        }
+                        Spacer(Modifier.width(CfSpace.S8))
+                        Text("[image]", style = CfType.BodyMuted)
                     }
-                    Spacer(Modifier.width(CfSpace.S8))
-                    Text("[image]", style = CfType.BodyMuted)
+                } else {
+                    Text(
+                        clip.text ?: "",
+                        style = CfType.Body,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-            } else {
+                if (!selectMode) {
+                    CfPinToggle(pinned = clip.pinned, onToggle = onTogglePin)
+                }
+            }
+            Spacer(Modifier.height(CfSpace.S7))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (clip.originDevice == HalDevice.ANDROID) Icons.Filled.PhoneAndroid else Icons.Filled.Computer,
+                    contentDescription = null,
+                    tint = CfColor.InkFaint,
+                    modifier = Modifier.size(11.dp),
+                )
+                Spacer(Modifier.width(4.dp))
                 Text(
-                    clip.text ?: "",
-                    style = CfType.Body,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    "${clip.originDevice} · ${halRelativeTime(clip.createdAt)}",
+                    style = CfType.Meta,
                 )
             }
-            CfPinToggle(pinned = clip.pinned, onToggle = onTogglePin)
         }
-        Spacer(Modifier.height(CfSpace.S7))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (clip.originDevice == HalDevice.ANDROID) Icons.Filled.PhoneAndroid else Icons.Filled.Computer,
-                contentDescription = null,
-                tint = CfColor.InkFaint,
-                modifier = Modifier.size(11.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "${clip.originDevice} · ${halRelativeTime(clip.createdAt)}",
-                style = CfType.Meta,
-            )
+    }
+}
+
+@Composable
+internal fun CfCheckbox(checked: Boolean, modifier: Modifier = Modifier) {
+    val fill = if (checked) CfColor.Accent else CfColor.Inset
+    val border = if (checked) CfColor.Accent else CfColor.Rule
+    Box(
+        modifier = modifier
+            .size(16.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(fill)
+            .border(1.dp, border, RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = CfColor.Background, modifier = Modifier.size(11.dp))
         }
     }
 }
