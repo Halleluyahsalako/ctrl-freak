@@ -1,54 +1,52 @@
 # Android implementation plan
 
-**Status: unverified spec, not tested code.** This machine has no Java or Android SDK installed, so unlike the extension (typecheck + build both verified), nothing here has been compiled. Treat this as a precise starting point to build from in Android Studio, not a drop-in working app — expect to fix version mismatches Android Studio's own wizard would have avoided.
+**Status: toolchain verified, minimal app builds and runs. Firebase/auth/sync/UI not yet added.**
 
-## Why not hand-write the Gradle project too
+Tonight this went further than "plan" — JDK 17, Android SDK, and Gradle got installed on this machine, and a real minimal Compose app (`android/`) was hand-written and successfully built with `gradle assembleDebug`, producing a real installable `app-debug.apk`. The sections below that used to be speculative are now a record of what actually worked, including the exact errors hit and fixed along the way — useful if a future Gradle/AGP update reintroduces similar issues.
 
-Android Gradle/Compose/Kotlin version pairings are fragile and change often. Getting one number wrong (AGP vs. Kotlin vs. Compose compiler) produces a build that fails before a single line of app code runs, and there's no way to catch that without actually building. Android Studio's "Empty Activity (Compose)" wizard pins correct, current versions automatically — start there, then layer the plan below on top, rather than hand-typing `build.gradle.kts` from scratch.
+## What's actually verified
 
-## 1. Create the project
+- **JDK**: Microsoft Build of OpenJDK 17.0.19 (`C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot`), installed via winget, `JAVA_HOME` persisted.
+- **Android SDK**: command-line tools only (no Android Studio IDE), at `C:\Users\HP\AppData\Local\Android\Sdk`, `ANDROID_HOME` persisted. Installed: `platform-tools`, `platforms;android-34`, `platforms;android-36`, `build-tools;34.0.0`, `build-tools;36.0.0`.
+- **Gradle**: 9.6.1, standalone install at `C:\Users\HP\AppData\Local\Android\gradle\gradle-9.6.1` (portable zip, not on PATH by default — see below), plus the project's own `gradlew`/`gradle-wrapper.jar` committed for anyone else building this.
+- **AGP**: 9.3.0 — this is recent enough that it has **built-in Kotlin support**, which changes the plugin setup from what most tutorials (and Android Studio's own migration doc, when fetched, gave an inconsistent example for) currently show:
+  - Do **not** apply `org.jetbrains.kotlin.android` — AGP 9 errors if you do ("no longer required... since AGP 9.0").
+  - **Do** still apply `org.jetbrains.kotlin.plugin.compose` — Compose specifically still needs its own compiler plugin even with built-in Kotlin; omitting it fails with "Starting in Kotlin 2.0, the Compose Compiler Gradle plugin is required."
+  - `kotlinOptions { jvmTarget = ... }` no longer resolves (that block came from the plugin that's now removed) — JVM target comes from `compileOptions { sourceCompatibility / targetCompatibility }` instead.
+- **Real build command**: `gradle assembleDebug` (using the standalone Gradle, not `./gradlew`, on this machine — the wrapper's own first-run download of Gradle itself hit network timeouts; the checked-in wrapper is still correct for anyone with a stabler connection or Android Studio, which manages this itself).
+- **Network note**: Maven Central (`repo.maven.apache.org`) was timing out intermittently during dependency resolution tonight. `android/gradle.properties` has extended HTTP timeouts (120s) and retry count (5) as a result — if a fresh build times out again, that's the likely cause, not a config regression.
 
-- Android Studio → New Project → **Empty Activity** (Compose)
-- Package name: `com.hal.ctrlfreak` (see `ARCHITECTURE.md §1` naming convention)
-- Minimum SDK: 26 (Android 8.0) — covers the vast majority of devices without complicating clipboard/Compose APIs
-- Language: Kotlin
+## Current file layout
 
-## 2. Add dependencies
+```
+android/
+  settings.gradle.kts
+  build.gradle.kts          — root: AGP + Compose compiler plugin versions
+  gradle.properties         — JVM args, extended network timeouts
+  local.properties          — sdk.dir (gitignored, machine-specific)
+  gradlew / gradlew.bat / gradle/wrapper/
+  app/
+    build.gradle.kts        — namespace com.hal.ctrlfreak, minSdk 26 / compileSdk 36
+    src/main/
+      AndroidManifest.xml
+      java/com/hal/ctrlfreak/
+        HalMainActivity.kt  — bare Compose scaffold, just renders "Ctrl+Freak"
+        data/HalSchema.kt   — HalClipItem/HalNote/HalCategory/HalAttachment,
+                              mirrors shared/schema.ts field-for-field
+      res/values/themes.xml
+```
 
-Via the wizard's version catalog (`libs.versions.toml`) or directly — use whatever current stable versions Android Studio suggests when you add these, since anything pinned here today may already be stale:
+## What's left — in build order
 
-- `com.google.firebase:firebase-bom` (Firestore + Auth)
-- `com.google.firebase:firebase-firestore-ktx`
-- `com.google.firebase:firebase-auth-ktx`
-- `androidx.credentials:credentials` + `androidx.credentials:credentials-play-services-auth` (Google sign-in — this replaced the old `GoogleSignIn` API; the Credential Manager APIs are the current recommended path)
-- `com.google.android.gms:play-services-auth` (still needed alongside Credential Manager for the Google ID token flow)
-- `com.squareup.okhttp3:okhttp` (Drive REST calls — no need for the full Drive SDK for three simple calls)
-- Also add `google-services.json` (downloaded from Firebase console → Project settings → your Android app registration) to `android/app/`
+Each of these should be added and re-verified with `gradle assembleDebug` one at a time, not all at once — that's exactly how tonight's plugin errors got caught quickly instead of compounding.
 
-## 3. File plan (mirrors the extension's module split 1:1)
+1. **Firebase**: add `com.google.firebase:firebase-bom`, `firebase-firestore-ktx`, `firebase-auth-ktx`. Needs `google-services.json` from Firebase console → Project settings → add an Android app with package `com.hal.ctrlfreak` (this also needs your debug keystore's SHA-1 fingerprint registered, same note as in `docs/SETUP.md`).
+2. **Auth**: `androidx.credentials` + `credentials-play-services-auth` + `play-services-auth`, per `HalAuth.kt` plan below.
+3. **Sync**: Firestore CRUD/listeners mirroring `hal-sync.ts`/`hal-notes-sync.ts` — same collections, same `firestore.rules`, zero backend changes needed.
+4. **Drive**: OkHttp-based upload/fetch mirroring `hal-drive.ts`.
+5. **Clipboard + UI**: manual "sync now" button (Android 10+ blocks background clipboard reads, same constraint spirit as the browser — see `ARCHITECTURE.md §3`) plus an `ACTION_SEND` share-sheet intent filter, which is arguably the *better* Android UX since it skips the clipboard round-trip entirely for sharing from other apps.
+6. **Notes UI**: Compose screen mirroring `hal-notes.tsx`'s feature set (categories, search, attachments). The extension's editor got upgraded to a real Tiptap WYSIWYG editor tonight (see `ARCHITECTURE.md` commit history) — Android's equivalent would be a Compose rich-text approach (e.g. `androidx.compose.foundation.text` `BasicTextField` with `AnnotatedString`, or a library) once this is reached; not designed in detail yet.
 
-| File | Mirrors | Purpose |
-|---|---|---|
-| `data/HalSchema.kt` | `shared/schema.ts` | `HalClipItem`, `HalNote`, `HalCategory` as Kotlin data classes — same fields, same `hal_` Firestore collection names |
-| `auth/HalAuth.kt` | `hal-auth.ts` | Sign in via Credential Manager's `GetGoogleIdOption`, exchange the ID token for a `GoogleAuthProvider` Firebase credential. Separately request an OAuth access token with the `drive.file` scope for Drive calls (Credential Manager gives you an ID token, not an access token — these are two different things, easy to conflate) |
-| `sync/HalSync.kt` | `hal-sync.ts` + `hal-notes-sync.ts` | Firestore CRUD + realtime listeners for `hal_clipItems`, `hal_notes`, `hal_categories` under `users/{uid}/...` — same paths, same `firestore.rules` already deployed, no backend changes needed |
-| `drive/HalDrive.kt` | `hal-drive.ts` | OkHttp multipart upload to Drive, fetch-by-id for paste-back |
-| `clipboard/HalClipboard.kt` | `hal-clipboard.ts` | `ClipboardManager.getPrimaryClip()` / `setPrimaryClip()` — see the constraint below |
-| `ui/HalMainActivity.kt` | `hal-popup.tsx` | Compose screens: sign-in gate, clip list, "sync now" button |
-| `ui/HalNotesScreen.kt` | `hal-notes.tsx` | Notes/categories CRUD screen |
+## Auth design note (unchanged from the original plan, still accurate)
 
-## 4. The clipboard constraint is different, not absent
-
-Android 10+ blocks background/non-focused apps from reading the clipboard for privacy — the same spirit as the browser constraint in `ARCHITECTURE.md §3`, different mechanism. `ClipboardManager.OnPrimaryClipChangedListener` only fires reliably while the app is foregrounded (or is the default IME, which this app has no reason to be).
-
-Two ways to get content in, and both are worth building rather than fighting the OS for passive background capture:
-
-1. **Manual sync button** — same pattern as the extension: open the app, tap "Sync clipboard now," it reads whatever's currently on the clipboard.
-2. **Share-sheet integration** (already on the `ARCHITECTURE.md §5` backlog as "Next," not "Later" — worth pulling into this same pass) — add an `ACTION_SEND` intent filter to the manifest so any app's native "Share" menu lists Ctrl+Freak directly. This is arguably the *better* Android UX, not a fallback: sharing an image from the Photos app straight to Ctrl+Freak needs no clipboard round-trip at all.
-
-## 5. What to bring back for review
-
-Once this builds in Android Studio, the things most likely to need a second pass:
-- The Credential Manager ID-token vs. OAuth-access-token distinction in `HalAuth.kt` (easy to get subtly wrong)
-- Whatever version numbers Android Studio actually picked vs. what's written above
-- Firestore security rules already deployed should need zero changes — same `users/{uid}/hal_*` shape as the extension
+Credential Manager's `GetGoogleIdOption` gives you an **ID token**, not an OAuth **access token** — these are different things and easy to conflate. The ID token is enough to sign into Firebase Auth via `GoogleAuthProvider`. For Drive calls you separately need an access token with the `drive.file` scope, requested via the Google Identity/Authorization APIs, not Credential Manager. Get this distinction right before writing `HalAuth.kt` — it's the most likely spot for a subtle bug, same caution as the original plan flagged.
