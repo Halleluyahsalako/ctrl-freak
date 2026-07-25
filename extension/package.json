@@ -19,6 +19,7 @@
     "@tiptap/extension-link": "^2.9.0",
     "@tiptap/extension-text-align": "^2.9.0",
     "@tiptap/extension-text-style": "^2.9.0",
+    "@tiptap/extension-color": "^2.9.0",
     "tiptap-markdown": "^0.8.10"
   },
   "devDependencies": {

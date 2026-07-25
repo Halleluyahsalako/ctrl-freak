@@ -46,6 +46,7 @@ data class HalNote(
     val body: String = "", // markdown
     val categoryId: String? = null,
     val attachments: List<HalAttachment> = emptyList(),
+    val pinned: Boolean = false,
     val updatedAt: Long = 0,
 )
 

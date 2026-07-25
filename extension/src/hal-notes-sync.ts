@@ -43,6 +43,14 @@ export async function halDeleteNote(uid: string, noteId: string): Promise<void> 
   await deleteDoc(doc(halDb, "users", uid, "hal_notes", noteId));
 }
 
+export async function halSetNotePinned(
+  uid: string,
+  noteId: string,
+  pinned: boolean,
+): Promise<void> {
+  await updateDoc(doc(halDb, "users", uid, "hal_notes", noteId), { pinned });
+}
+
 export function halSubscribeToNotes(
   uid: string,
   onChange: (notes: HalNote[]) => void,

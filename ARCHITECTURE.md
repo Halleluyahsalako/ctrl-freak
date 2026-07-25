@@ -42,6 +42,7 @@ interface HalNote {
   body: string                  // markdown
   categoryId?: string
   attachments: HalAttachment[]
+  pinned: boolean
   updatedAt: Timestamp
 }
 

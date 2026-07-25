@@ -68,11 +68,36 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 0.5rem;
         padding: 0.5rem 0.65rem;
         border-radius: var(--hal-radius-sm);
         font-size: 0.85rem;
         cursor: pointer;
         transition: background 0.12s ease;
+      }
+      .hal-note-item {
+        justify-content: flex-start;
+      }
+      .hal-note-item-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hal-pin {
+        background: none;
+        border: 1px solid var(--hal-rule);
+        color: var(--hal-ink-faint);
+        border-radius: 4px;
+        width: 20px;
+        height: 20px;
+        line-height: 1;
+        flex-shrink: 0;
+        cursor: pointer;
+        transition: color 0.12s ease, border-color 0.12s ease;
+      }
+      .hal-pinned {
+        color: var(--hal-accent);
+        border-color: var(--hal-accent);
       }
       .hal-category-item:hover,
       .hal-note-item:hover {
@@ -268,6 +293,23 @@
         height: 20px;
         background: var(--hal-rule);
         margin: 0 0.3rem;
+      }
+      .hal-color-swatches {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .hal-color-swatch {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1px solid var(--hal-rule);
+        cursor: pointer;
+        padding: 0;
+        transition: transform 0.1s ease;
+      }
+      .hal-color-swatch:hover {
+        transform: scale(1.15);
       }
       .hal-shortcuts {
         background: var(--hal-surface);

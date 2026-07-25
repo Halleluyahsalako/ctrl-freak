@@ -7,6 +7,7 @@ import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import TextAlign from "@tiptap/extension-text-align";
 import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
 import { Markdown } from "tiptap-markdown";
 import { HalFontSize } from "./hal-font-size";
 import { halAuth } from "./hal-firebase";
@@ -16,6 +17,7 @@ import {
   halCreateNote,
   halUpdateNote,
   halDeleteNote,
+  halSetNotePinned,
   halSubscribeToNotes,
   halCreateCategory,
   halDeleteCategory,
@@ -66,14 +68,16 @@ function HalNotesApp() {
     };
   }, [halUser]);
 
-  // Mounted once — Tiptap manages its own DOM independently of Preact from
-  // here on. Real-time WYSIWYG: typing bold shows bold immediately, and
-  // pasting rich text (e.g. from Word) keeps its bold/italic/heading/list
-  // structure, since ProseMirror parses the HTML Word puts on the clipboard.
-  // Colors/fonts don't survive — no editor's schema here supports them, same
-  // as pasting into Notion or Google Docs.
+  // Depends on halUser, not []: on first paint halUser is still null (auth
+  // state hasn't resolved yet), so the container div below doesn't exist in
+  // the DOM at all — an effect with [] would bail out once and never run
+  // again, leaving the editor permanently uninitialized (looked like "the
+  // text area isn't clickable" — there was no editor there to click).
+  // Real-time WYSIWYG: typing bold shows bold immediately, and pasting rich
+  // text (e.g. from Word) keeps its bold/italic/heading/list structure,
+  // since ProseMirror parses the HTML Word puts on the clipboard.
   useEffect(() => {
-    if (!halEditorContainerRef.current) return;
+    if (!halUser || !halEditorContainerRef.current || halEditorRef.current) return;
     const editor = new Editor({
       element: halEditorContainerRef.current,
       extensions: [
@@ -82,6 +86,7 @@ function HalNotesApp() {
         Link.configure({ openOnClick: false }),
         TextStyle,
         HalFontSize,
+        Color,
         TextAlign.configure({ types: ["heading", "paragraph"] }),
         Markdown.configure({ html: false }),
       ],
@@ -109,8 +114,11 @@ function HalNotesApp() {
       },
     });
     halEditorRef.current = editor;
-    return () => editor.destroy();
-  }, []);
+    return () => {
+      editor.destroy();
+      halEditorRef.current = null;
+    };
+  }, [halUser]);
 
   const halVisibleNotes = halNotes
     .filter((n) => halActiveCategoryId === "all" || n.categoryId === halActiveCategoryId)
@@ -142,9 +150,19 @@ function HalNotesApp() {
       if (halSelectedNoteId) {
         await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
       } else {
-        await halCreateNote(halUser.uid, payload);
+        await halCreateNote(halUser.uid, { ...payload, pinned: false });
         halSelectNote(null);
       }
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
+  }
+
+  async function halHandleToggleNotePin(e: Event, note: HalNote) {
+    e.stopPropagation();
+    if (!halUser) return;
+    try {
+      await halSetNotePinned(halUser.uid, note.id, !note.pinned);
     } catch (err) {
       setHalError((err as Error).message);
     }
@@ -302,15 +320,24 @@ function HalNotesApp() {
         />
 
         <ul class="hal-note-list">
-          {halVisibleNotes.map((note) => (
-            <li
-              key={note.id}
-              class={`hal-note-item ${halSelectedNoteId === note.id ? "hal-active" : ""}`}
-              onClick={() => halSelectNote(note)}
-            >
-              {note.title}
-            </li>
-          ))}
+          {[...halVisibleNotes]
+            .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
+            .map((note) => (
+              <li
+                key={note.id}
+                class={`hal-note-item ${halSelectedNoteId === note.id ? "hal-active" : ""}`}
+                onClick={() => halSelectNote(note)}
+              >
+                <button
+                  class={`hal-pin ${note.pinned ? "hal-pinned" : ""}`}
+                  onClick={(e) => halHandleToggleNotePin(e, note)}
+                  title={note.pinned ? "Unpin" : "Pin"}
+                >
+                  *
+                </button>
+                <span class="hal-note-item-title">{note.title}</span>
+              </li>
+            ))}
         </ul>
         <button class="hal-button" onClick={() => halSelectNote(null)}>
           + New note
@@ -436,6 +463,25 @@ function HalNotesApp() {
             <option value="24px">Huge</option>
           </select>
 
+          <div class="hal-color-swatches">
+            {["#eceaf3", "#e0a75e", "#74c7d4", "#7dd0a0", "#ea6f67", "#b58bde"].map((color) => (
+              <button
+                key={color}
+                class="hal-color-swatch"
+                style={{ background: color }}
+                title={`Text color ${color}`}
+                onClick={halToolbar(() => halEditorRef.current?.chain().focus().setColor(color).run())}
+              />
+            ))}
+            <button
+              class="hal-toolbar-btn"
+              title="Reset color"
+              onClick={halToolbar(() => halEditorRef.current?.chain().focus().unsetColor().run())}
+            >
+              ⦸
+            </button>
+          </div>
+
           <span class="hal-toolbar-divider" />
 
           <button
@@ -463,10 +509,13 @@ function HalNotesApp() {
 
         {halShowShortcuts && (
           <div class="hal-shortcuts">
-            <strong>Editor:</strong> Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+K link
+            <strong>Editor:</strong> Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+K link ·
+            color/size/align/attach are toolbar-only, no shortcut
+            <br />
+            <strong>Notes:</strong> click <em>*</em> next to a note to pin it to the top
             <br />
             <strong>Extension:</strong> Ctrl+Shift+Y (Cmd+Shift+Y on Mac) opens the popup from
-            anywhere · click a clip to copy it · click <em>*</em> to pin
+            anywhere · click a clip to copy it · click <em>*</em> to pin a clip
           </div>
         )}
 
