@@ -54,10 +54,13 @@ import com.hal.ctrlfreak.data.HalClipKind
 import com.hal.ctrlfreak.data.HalDevice
 import com.hal.ctrlfreak.data.HalNote
 import com.hal.ctrlfreak.drive.halUploadFileToDrive
+import com.hal.ctrlfreak.sync.halClearAllClips
 import com.hal.ctrlfreak.sync.halCreateCategory
 import com.hal.ctrlfreak.sync.halCreateNote
 import com.hal.ctrlfreak.sync.halDeleteCategory
+import com.hal.ctrlfreak.sync.halDeleteClips
 import com.hal.ctrlfreak.sync.halDeleteNote
+import com.hal.ctrlfreak.sync.halDeleteNotes
 import com.hal.ctrlfreak.sync.halPushClip
 import com.hal.ctrlfreak.sync.halSetClipPinned
 import com.hal.ctrlfreak.sync.halSubscribeToCategories
@@ -402,6 +405,26 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                     onTogglePin = { clip ->
                         scope.launch { halSetClipPinned(uid, clip.id, !clip.pinned) }
                     },
+                    onClearAll = {
+                        scope.launch {
+                            try {
+                                halClearAllClips(uid)
+                                halShowSnackbar("Clipboard cleared", CfSnackbarKind.Success)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
+                    onDeleteSelected = { ids ->
+                        scope.launch {
+                            try {
+                                halDeleteClips(uid, ids.toList())
+                                halShowSnackbar("Deleted ${ids.size} item${if (ids.size == 1) "" else "s"}", CfSnackbarKind.Success)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
                 )
 
                 HalTab.NOTES -> CfNotesScreen(
@@ -413,6 +436,16 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                     onOpenNote = { halOpenNoteEditor(it) },
                     onTogglePin = { note ->
                         scope.launch { halUpdateNote(uid, note.id, note.copy(pinned = !note.pinned)) }
+                    },
+                    onDeleteSelected = { ids ->
+                        scope.launch {
+                            try {
+                                halDeleteNotes(uid, ids.toList())
+                                halShowSnackbar("Deleted ${ids.size} note${if (ids.size == 1) "" else "s"}", CfSnackbarKind.Neutral)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
                     },
                 )
             }
