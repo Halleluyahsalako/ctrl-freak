@@ -22,10 +22,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NoteAlt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,15 +70,57 @@ fun CfNotesScreen(
     onNewNote: () -> Unit,
     onOpenNote: (HalNote) -> Unit,
     onTogglePin: (HalNote) -> Unit,
+    onDeleteSelected: (Set<String>) -> Unit,
 ) {
+    var selectMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    var confirmDeleteSelected by remember { mutableStateOf(false) }
+
+    fun toggleSelectMode() {
+        selectMode = !selectMode
+        selectedIds = emptySet()
+    }
+
+    fun toggleSelected(id: String) {
+        selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(CfColor.Background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = CfSpace.S14, vertical = CfSpace.S12),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("notes", style = CfType.ScreenTitle)
-            IconButton(onClick = onNewNote) {
-                Icon(Icons.Filled.Add, contentDescription = "New note", tint = CfColor.Accent)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectMode) {
+                    TextButton(onClick = { toggleSelectMode() }) {
+                        Text("Cancel", style = CfType.Label.copy(color = CfColor.InkMuted))
+                    }
+                } else {
+                    TextButton(onClick = { toggleSelectMode() }, enabled = notes.isNotEmpty()) {
+                        Text("Select", style = CfType.Label.copy(color = CfColor.InkFaint))
+                    }
+                    IconButton(onClick = onNewNote) {
+                        Icon(Icons.Filled.Add, contentDescription = "New note", tint = CfColor.Accent)
+                    }
+                }
+            }
+        }
+
+        if (selectMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CfSpace.S14)
+                    .padding(bottom = CfSpace.S9),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${selectedIds.size} selected", style = CfType.Label)
+                TextButton(onClick = { confirmDeleteSelected = true }, enabled = selectedIds.isNotEmpty()) {
+                    Text("Delete", style = CfType.Label.copy(color = CfColor.Danger))
+                }
             }
         }
 
@@ -116,12 +164,39 @@ fun CfNotesScreen(
                     CfNoteRow(
                         note = note,
                         color = halCategoryColor(categories, note.categoryId),
-                        onClick = { onOpenNote(note) },
+                        selectMode = selectMode,
+                        selected = selectedIds.contains(note.id),
+                        onClick = { if (selectMode) toggleSelected(note.id) else onOpenNote(note) },
                         onTogglePin = { onTogglePin(note) },
                     )
                 }
             }
         }
+    }
+
+    if (confirmDeleteSelected) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSelected = false },
+            containerColor = CfColor.Surface,
+            shape = RoundedCornerShape(CfRadius.Large),
+            title = { Text("Delete ${selectedIds.size} note${if (selectedIds.size == 1) "" else "s"}?", style = CfType.ScreenTitle) },
+            text = { Text("This can't be undone.", style = CfType.BodyMuted) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteSelected = false
+                    onDeleteSelected(selectedIds)
+                    selectMode = false
+                    selectedIds = emptySet()
+                }) {
+                    Text("Delete", style = CfType.Body.copy(color = CfColor.Danger))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteSelected = false }) {
+                    Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
+                }
+            },
+        )
     }
 }
 
@@ -129,6 +204,8 @@ fun CfNotesScreen(
 private fun CfNoteRow(
     note: HalNote,
     color: androidx.compose.ui.graphics.Color,
+    selectMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
 ) {
@@ -146,6 +223,9 @@ private fun CfNoteRow(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            if (selectMode) {
+                CfCheckbox(checked = selected, modifier = Modifier.padding(end = CfSpace.S9))
+            }
             Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
             Spacer(Modifier.width(CfSpace.S8))
             Text(
@@ -155,6 +235,8 @@ private fun CfNoteRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        CfPinToggle(pinned = note.pinned, onToggle = onTogglePin)
+        if (!selectMode) {
+            CfPinToggle(pinned = note.pinned, onToggle = onTogglePin)
+        }
     }
 }
