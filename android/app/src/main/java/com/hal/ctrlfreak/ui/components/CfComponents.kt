@@ -3,6 +3,7 @@ package com.hal.ctrlfreak.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -105,8 +106,9 @@ fun CfPinToggle(pinned: Boolean, onToggle: () -> Unit, modifier: Modifier = Modi
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun CfCategoryChip(label: String, active: Boolean, onClick: () -> Unit) {
+fun CfCategoryChip(label: String, active: Boolean, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val borderColor = if (active) CfColor.Accent else CfColor.Rule
     val bg = if (active) CfColor.SurfaceRaised else Color.Transparent
     val textColor = if (active) CfColor.Accent else CfColor.InkMuted
@@ -117,7 +119,7 @@ fun CfCategoryChip(label: String, active: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(CfRadius.Small))
             .background(bg)
             .border(1.dp, borderColor, RoundedCornerShape(CfRadius.Small))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = CfSpace.S9),
         contentAlignment = Alignment.Center,
     ) {

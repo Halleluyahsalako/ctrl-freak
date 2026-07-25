@@ -25,8 +25,10 @@ import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,10 +73,15 @@ fun CfNotesScreen(
     onOpenNote: (HalNote) -> Unit,
     onTogglePin: (HalNote) -> Unit,
     onDeleteSelected: (Set<String>) -> Unit,
+    onCreateCategory: (String) -> Unit,
+    onDeleteCategory: (String) -> Unit,
 ) {
     var selectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var confirmDeleteSelected by remember { mutableStateOf(false) }
+    var showAddCategory by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+    var confirmDeleteCategoryId by remember { mutableStateOf<String?>(null) }
 
     fun toggleSelectMode() {
         selectMode = !selectMode
@@ -140,6 +147,14 @@ fun CfNotesScreen(
                     label = cat.name.lowercase(),
                     active = activeCategoryId == cat.id,
                     onClick = { onSelectCategory(cat.id) },
+                    onLongClick = { confirmDeleteCategoryId = cat.id },
+                )
+            }
+            item {
+                com.hal.ctrlfreak.ui.components.CfCategoryChip(
+                    label = "+ new",
+                    active = false,
+                    onClick = { showAddCategory = true },
                 )
             }
         }
@@ -193,6 +208,71 @@ fun CfNotesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDeleteSelected = false }) {
+                    Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
+                }
+            },
+        )
+    }
+
+    if (showAddCategory) {
+        AlertDialog(
+            onDismissRequest = { showAddCategory = false; newCategoryName = "" },
+            containerColor = CfColor.Surface,
+            shape = RoundedCornerShape(CfRadius.Large),
+            title = { Text("New category", style = CfType.ScreenTitle) },
+            text = {
+                OutlinedTextField(
+                    value = newCategoryName,
+                    onValueChange = { newCategoryName = it },
+                    placeholder = { Text("Category name", style = CfType.Body.copy(color = CfColor.InkFaint)) },
+                    textStyle = CfType.Body,
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = CfColor.Inset,
+                        unfocusedContainerColor = CfColor.Inset,
+                        focusedIndicatorColor = CfColor.Accent,
+                        unfocusedIndicatorColor = CfColor.Rule,
+                        cursorColor = CfColor.Accent,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onCreateCategory(newCategoryName.trim())
+                        showAddCategory = false
+                        newCategoryName = ""
+                    },
+                    enabled = newCategoryName.isNotBlank(),
+                ) {
+                    Text("Create", style = CfType.Body.copy(color = CfColor.Accent))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCategory = false; newCategoryName = "" }) {
+                    Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
+                }
+            },
+        )
+    }
+
+    if (confirmDeleteCategoryId != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteCategoryId = null },
+            containerColor = CfColor.Surface,
+            shape = RoundedCornerShape(CfRadius.Large),
+            title = { Text("Delete category?", style = CfType.ScreenTitle) },
+            text = { Text("Notes in it aren't deleted, they just lose this category.", style = CfType.BodyMuted) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteCategoryId?.let(onDeleteCategory)
+                    confirmDeleteCategoryId = null
+                }) {
+                    Text("Delete", style = CfType.Body.copy(color = CfColor.Danger))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteCategoryId = null }) {
                     Text("Cancel", style = CfType.Body.copy(color = CfColor.InkMuted))
                 }
             },
