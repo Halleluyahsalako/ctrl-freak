@@ -10,13 +10,36 @@ import {
 } from "./hal-clipboard";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
 import { halPushClip, halSubscribeToClips, halSetClipPinned } from "./hal-sync";
+import { useHalToast, HalToast } from "./hal-toast";
+import {
+  HalIconPin,
+  HalIconExternalLink,
+  HalIconImage,
+  HalIconDesktop,
+  HalIconMobile,
+  HalIconClipboardPlus,
+  HalIconClipboardOff,
+} from "./hal-icons";
 import type { HalClipItem } from "@shared/schema";
+
+// docs/ctrl-freak-extension-ui-spec.md §2
+
+const HAL_CODE_LIKE = /^\S+$/; // single unbroken token — a URL, path, var name
+
+function halRelativeTime(createdAt: number): string {
+  const minutes = Math.floor((Date.now() - createdAt) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / (24 * 60))}d`;
+}
 
 function HalPopup() {
   const [halUser, setHalUser] = useState<User | null>(null);
   const [halClips, setHalClips] = useState<HalClipItem[]>([]);
   const [halBusy, setHalBusy] = useState(false);
-  const [halError, setHalError] = useState<string | null>(null);
+  const [halSignInError, setHalSignInError] = useState<string | null>(null);
+  const { toast, show: halToast } = useHalToast();
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -29,21 +52,23 @@ function HalPopup() {
   }, [halUser]);
 
   async function halHandleSignIn() {
-    setHalError(null);
+    setHalSignInError(null);
     try {
       await halSignIn();
-    } catch (err) {
-      setHalError((err as Error).message);
+    } catch {
+      setHalSignInError("Couldn't sign in. Try again.");
     }
   }
 
   async function halHandleSyncNow() {
     if (!halUser) return;
     setHalBusy(true);
-    setHalError(null);
     try {
       const read = await halReadClipboardSmart();
-      if (!read) return;
+      if (!read) {
+        halToast("Clipboard's empty — nothing to sync", "neutral");
+        return;
+      }
 
       if (read.kind === "text") {
         await halPushClip(halUser.uid, {
@@ -52,25 +77,24 @@ function HalPopup() {
           pinned: false,
           originDevice: "browser",
         });
-        return;
+      } else {
+        const accessToken = await halGetValidAccessToken();
+        const extension = read.mimeType.split("/")[1] ?? "png";
+        const driveFileId = await halUploadFileToDrive(
+          accessToken,
+          read.blob,
+          `hal-clip-${Date.now()}.${extension}`,
+        );
+        await halPushClip(halUser.uid, {
+          kind: "image",
+          driveFileId,
+          pinned: false,
+          originDevice: "browser",
+        });
       }
-
-      // image: upload to Drive first, then store the pointer
-      const accessToken = await halGetValidAccessToken();
-      const extension = read.mimeType.split("/")[1] ?? "png";
-      const driveFileId = await halUploadFileToDrive(
-        accessToken,
-        read.blob,
-        `hal-clip-${Date.now()}.${extension}`,
-      );
-      await halPushClip(halUser.uid, {
-        kind: "image",
-        driveFileId,
-        pinned: false,
-        originDevice: "browser",
-      });
-    } catch (err) {
-      setHalError((err as Error).message);
+      halToast("Synced 1 item", "success");
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalBusy(false);
     }
@@ -81,13 +105,12 @@ function HalPopup() {
     if (!halUser) return;
     try {
       await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
-    } catch (err) {
-      setHalError((err as Error).message);
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
     }
   }
 
   async function halHandlePaste(clip: HalClipItem) {
-    setHalError(null);
     try {
       if (clip.kind === "image" && clip.driveFileId) {
         const accessToken = await halGetValidAccessToken();
@@ -96,85 +119,116 @@ function HalPopup() {
       } else if (clip.text) {
         await halWriteClipboardText(clip.text);
       }
-    } catch (err) {
-      setHalError((err as Error).message);
+      halToast("Copied", "success");
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
     }
   }
 
   if (!halUser) {
     return (
-      <main class="hal-popup">
-        <h1 class="hal-title">Ctrl+Freak</h1>
-        <p class="hal-subtitle">clipboard + notes, synced to your phone</p>
-        <button class="hal-button" onClick={halHandleSignIn}>
-          Sign in with Google
+      <main class="hal-signin">
+        <div class="hal-wordmark">
+          ctrl+<span class="hal-accent-part">freak</span>
+        </div>
+        <p class="hal-tagline">Your clipboard and notes, on every device.</p>
+        <button class="hal-google-btn" onClick={halHandleSignIn}>
+          <span style={{ color: "var(--cyan)" }}>◍</span> Continue with Google
         </button>
-        {halError && <p class="hal-error">{halError}</p>}
+        {halSignInError && <p class="hal-helper-error">{halSignInError}</p>}
       </main>
     );
   }
 
+  const halPinned = halClips.filter((c) => c.pinned);
+  const halRecent = halClips.filter((c) => !c.pinned);
+  const halOrdered = [...halPinned, ...halRecent];
+
   return (
-    <main class="hal-popup">
-      <div class="hal-header">
-        <div>
-          <h1 class="hal-title">Ctrl+Freak</h1>
-          <p class="hal-subtitle">{halUser.email}</p>
+    <main>
+      <div class="hal-topbar">
+        <div class="hal-wordmark">
+          ctrl+<span class="hal-accent-part">freak</span>
         </div>
-        <div>
+        <div class="hal-status">
+          <span class="hal-status-dot hal-online" />
+          <span>synced</span>
+          <span>·</span>
           <button
-            class="hal-link"
+            class="hal-notes-link"
             onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("hal-notes.html") })}
           >
-            notes
-          </button>
-          <button class="hal-link" onClick={halSignOut}>
-            sign out
+            <HalIconExternalLink /> notes
           </button>
         </div>
       </div>
 
-      <h2 class="hal-section-label">Clipboard</h2>
-      <button class="hal-button" onClick={halHandleSyncNow} disabled={halBusy}>
-        {halBusy ? "Syncing…" : "Sync clipboard now"}
-      </button>
-      {halError && <p class="hal-error">{halError}</p>}
+      <div class="hal-popup-body">
+        <button class="hal-sync-btn" onClick={halHandleSyncNow} disabled={halBusy}>
+          {halBusy ? "Syncing…" : (
+            <>
+              <HalIconClipboardPlus /> Sync clipboard now
+            </>
+          )}
+        </button>
+        <p class="hal-count-label">{halClips.length} recent · pinned first</p>
 
-      {halClips.length === 0 ? (
-        <p class="hal-empty">
-          Nothing synced yet — copy something anywhere on this computer, then click Sync. Do it
-          again for the next thing; everything you've synced stays listed below, on both this
-          extension and the Android app.
-        </p>
-      ) : (
-        <ul class="hal-clip-list">
-          {[...halClips]
-            .sort((a, b) => Number(b.pinned) - Number(a.pinned))
-            .map((clip) => (
+        {halOrdered.length === 0 ? (
+          <div class="hal-empty-state">
+            <div class="hal-empty-well">
+              <HalIconClipboardOff />
+            </div>
+            <p class="hal-empty-title">Nothing synced yet</p>
+            <p class="hal-empty-body">
+              Copy something, then click Sync — it'll show up here and on your phone.
+            </p>
+          </div>
+        ) : (
+          <ul class="hal-feed">
+            {halOrdered.map((clip) => (
               <li
                 key={clip.id}
-                class="hal-clip-item"
+                class={`hal-clip-card ${clip.pinned ? "hal-pinned-card" : ""}`}
                 onClick={() => halHandlePaste(clip)}
                 title="Click to copy"
               >
-                <button
-                  class={`hal-pin ${clip.pinned ? "hal-pinned" : ""}`}
-                  onClick={(e) => halHandleTogglePin(e, clip)}
-                  title={clip.pinned ? "Unpin" : "Pin"}
-                >
-                  *
-                </button>
-                <span class="hal-clip-text">
-                  {clip.kind === "image" ? "[image]" : clip.text}
-                </span>
+                <div class="hal-clip-top">
+                  {clip.kind === "image" ? (
+                    <div class="hal-clip-image-row">
+                      <div class="hal-thumb-well">
+                        <HalIconImage />
+                      </div>
+                      <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>[image]</span>
+                    </div>
+                  ) : (
+                    <span
+                      class={`hal-clip-text ${clip.text && HAL_CODE_LIKE.test(clip.text) ? "hal-code-like" : ""}`}
+                    >
+                      {clip.text}
+                    </span>
+                  )}
+                  <button
+                    class={`hal-pin-btn ${clip.pinned ? "hal-pinned" : ""}`}
+                    onClick={(e) => halHandleTogglePin(e, clip)}
+                    aria-label={clip.pinned ? "Unpin" : "Pin"}
+                    title={clip.pinned ? "Unpin" : "Pin"}
+                  >
+                    <HalIconPin />
+                  </button>
+                </div>
+                <div class="hal-clip-meta">
+                  {clip.originDevice === "android" ? <HalIconMobile /> : <HalIconDesktop />}
+                  <span>{clip.originDevice}</span>
+                  <span>·</span>
+                  <span>{halRelativeTime(clip.createdAt)}</span>
+                </div>
               </li>
             ))}
-        </ul>
-      )}
+          </ul>
+        )}
+      </div>
 
-      <p class="hal-footer">
-        <kbd>Ctrl+Shift+Y</kbd> opens this popup · click a clip to copy it
-      </p>
+      <HalToast toast={toast} position="popup" />
     </main>
   );
 }

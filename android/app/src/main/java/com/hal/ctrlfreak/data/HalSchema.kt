@@ -38,6 +38,7 @@ data class HalClipItem(
 data class HalAttachment(
     val driveFileId: String = "",
     val name: String = "",
+    val size: Long = 0, // bytes
 )
 
 data class HalNote(

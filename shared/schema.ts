@@ -28,6 +28,7 @@ export interface HalClipItem {
 export interface HalAttachment {
   driveFileId: string;
   name: string;
+  size: number; // bytes — captured at upload time since the source blob isn't available on later loads
 }
 
 // longer-form notes, separate from the transient clipboard feed

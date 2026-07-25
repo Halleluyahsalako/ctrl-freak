@@ -33,6 +33,7 @@ interface HalClipItem {
 interface HalAttachment {
   driveFileId: string
   name: string
+  size: number // bytes
 }
 
 // longer-form notes, separate from the transient clipboard feed

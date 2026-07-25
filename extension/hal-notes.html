@@ -3,364 +3,744 @@
   <head>
     <meta charset="UTF-8" />
     <title>Ctrl+Freak — Notes</title>
+    <link rel="stylesheet" href="/src/hal-tokens.css" />
     <style>
-      * {
-        box-sizing: border-box;
-      }
-      :root {
-        --hal-bg: #0e0f17;
-        --hal-surface: #171925;
-        --hal-surface-raised: #1e2130;
-        --hal-inset: #0a0b12;
-        --hal-ink: #eceaf3;
-        --hal-ink-muted: #9a9cb3;
-        --hal-ink-faint: #6b6d84;
-        --hal-rule: #2a2c3d;
-        --hal-accent: #e0a75e;
-        --hal-accent-ink: #12131c;
-        --hal-cyan: #74c7d4;
-        --hal-danger: #ea6f67;
-        --hal-radius-sm: 6px;
-        --hal-radius: 10px;
-        --hal-radius-lg: 14px;
-        --hal-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
-      }
+      html,
       body {
-        margin: 0;
-        background:
-          radial-gradient(1200px 600px at 15% -10%, rgba(224, 167, 94, 0.06), transparent),
-          var(--hal-bg);
-        color: var(--hal-ink);
-        font-family: ui-sans-serif, "IBM Plex Sans", system-ui, sans-serif;
+        height: 100%;
       }
-      .hal-notes-app {
-        display: grid;
-        grid-template-columns: 300px 1fr;
-        min-height: 100vh;
-      }
-      .hal-sidebar {
-        background: var(--hal-surface);
-        border-right: 1px solid var(--hal-rule);
-        padding: 1.25rem;
+      .hal-app {
         display: flex;
         flex-direction: column;
-        gap: 0.6rem;
+        height: 100vh;
       }
-      .hal-title {
-        font-family: ui-monospace, "IBM Plex Mono", monospace;
-        font-size: 1.05rem;
-        font-weight: 700;
-        margin: 0 0 0.75rem;
-        color: var(--hal-accent);
-        letter-spacing: -0.01em;
-      }
-      .hal-category-list,
-      .hal-note-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
+
+      /* ---- top bar ---- */
+      .hal-topbar {
         display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
-      }
-      .hal-category-item,
-      .hal-note-item {
-        display: flex;
-        justify-content: space-between;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 0.65rem;
-        border-radius: var(--hal-radius-sm);
-        font-size: 0.85rem;
+        justify-content: space-between;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--rule);
+        flex-shrink: 0;
+      }
+      .hal-topbar-left {
+        display: flex;
+        align-items: baseline;
+        gap: var(--sp-8);
+      }
+      .hal-wordmark {
+        font-family: var(--font-mono);
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .hal-accent-part {
+        color: var(--accent);
+      }
+      .hal-crumb {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-faint);
+      }
+      .hal-btn-primary {
+        height: 32px;
+        padding: 0 var(--sp-12);
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: var(--radius-sm);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         cursor: pointer;
-        transition: background 0.12s ease;
+        transition: filter 120ms var(--ease), transform 60ms var(--ease);
       }
-      .hal-note-item {
-        justify-content: flex-start;
+      .hal-btn-primary:hover {
+        filter: brightness(1.06);
       }
-      .hal-note-item-title {
+      .hal-btn-primary:active {
+        transform: translateY(1px);
+      }
+
+      /* ---- layout ---- */
+      .hal-layout {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+
+      /* ---- sidebar ---- */
+      .hal-sidebar {
+        width: 210px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--rule);
+        padding: var(--sp-12);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .hal-search-wrap {
+        position: relative;
+      }
+      .hal-search-input {
+        width: 100%;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        padding: 7px 9px 7px 26px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink);
+        transition: border-color 120ms var(--ease);
+      }
+      .hal-search-input::placeholder {
+        color: var(--ink-faint);
+      }
+      .hal-search-input:focus {
+        border-color: var(--accent);
+      }
+      .hal-search-icon {
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--ink-faint);
+        pointer-events: none;
+      }
+      .hal-eyebrow {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin: 0 0 6px;
+      }
+      .hal-recent-block {
+        border-top: 1px solid var(--rule);
+        padding-top: 10px;
+      }
+      .hal-cat-row,
+      .hal-recent-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background 120ms var(--ease);
+      }
+      .hal-cat-row:hover,
+      .hal-recent-row:hover {
+        background: var(--surface-raised);
+      }
+      .hal-cat-row.hal-selected,
+      .hal-recent-row.hal-selected {
+        background: var(--surface-raised);
+      }
+      .hal-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .hal-recent-row .hal-dot {
+        width: 6px;
+        height: 6px;
+      }
+      .hal-cat-name {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--ink-muted);
+        flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .hal-pin {
-        background: none;
-        border: 1px solid var(--hal-rule);
-        color: var(--hal-ink-faint);
-        border-radius: 4px;
-        width: 20px;
-        height: 20px;
-        line-height: 1;
-        flex-shrink: 0;
-        cursor: pointer;
-        transition: color 0.12s ease, border-color 0.12s ease;
+      .hal-cat-row.hal-selected .hal-cat-name {
+        color: var(--ink);
       }
-      .hal-pinned {
-        color: var(--hal-accent);
-        border-color: var(--hal-accent);
+      .hal-cat-count {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-faint);
       }
-      .hal-category-item:hover,
-      .hal-note-item:hover {
-        background: var(--hal-surface-raised);
+      .hal-recent-title {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--ink-muted);
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .hal-active {
-        background: var(--hal-surface-raised);
-        color: var(--hal-accent);
-        box-shadow: inset 2px 0 0 var(--hal-accent);
+      .hal-recent-row.hal-selected .hal-recent-title {
+        color: var(--ink);
       }
-      .hal-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 0.5rem;
-      }
-      .hal-new-category {
+      .hal-add-category {
         display: flex;
-        gap: 0.4rem;
-        margin: 0.4rem 0;
+        gap: 6px;
+        margin-top: 6px;
       }
-      .hal-input {
-        background: var(--hal-inset);
-        border: 1px solid var(--hal-rule);
-        color: var(--hal-ink);
-        border-radius: var(--hal-radius-sm);
-        padding: 0.5rem 0.65rem;
-        font-family: inherit;
-        font-size: 0.85rem;
-        width: 100%;
-        transition: border-color 0.12s ease;
+      .hal-add-category input {
+        flex: 1;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        padding: 5px 7px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink);
       }
-      .hal-input:focus {
-        outline: none;
-        border-color: var(--hal-accent);
-      }
-      .hal-button {
-        padding: 0.55rem 1rem;
-        background: var(--hal-accent);
-        color: var(--hal-accent-ink);
-        border: none;
-        border-radius: var(--hal-radius-sm);
-        font-family: inherit;
-        font-weight: 600;
-        font-size: 0.85rem;
+      .hal-add-category button {
+        background: none;
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 0 8px;
         cursor: pointer;
-        transition: filter 0.12s ease, transform 0.05s ease;
       }
-      .hal-button:hover {
-        filter: brightness(1.08);
+      .hal-add-category button:hover {
+        background: var(--surface-raised);
+        color: var(--ink);
       }
-      .hal-button:active {
-        transform: translateY(1px);
-      }
-      .hal-button-small {
-        padding: 0.5rem 0.7rem;
-        flex-shrink: 0;
-      }
-      .hal-error {
-        color: var(--hal-danger);
-        background: rgba(234, 111, 103, 0.1);
-        border: 1px solid rgba(234, 111, 103, 0.3);
-        border-radius: var(--hal-radius-sm);
-        padding: 0.5rem 0.7rem;
-        font-size: 0.8rem;
-        margin: 0 0 0.5rem;
-      }
-      .hal-button-danger {
-        background: var(--hal-danger);
-        color: #1a0b0a;
-      }
-      .hal-link {
+      .hal-cat-remove {
         background: none;
         border: none;
-        color: var(--hal-cyan);
+        color: var(--ink-faint);
         cursor: pointer;
-        font-family: inherit;
-        font-size: 0.85rem;
-        padding: 0.15rem 0.3rem;
-        border-radius: 4px;
-        transition: background 0.12s ease;
+        font-size: 11px;
+        padding: 0 2px;
       }
-      .hal-link:hover {
-        background: var(--hal-surface-raised);
+      .hal-cat-remove:hover {
+        color: var(--danger);
       }
-      .hal-editor {
-        padding: 2rem 2.25rem;
+
+      /* ---- editor pane ---- */
+      .hal-editor-pane {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.85rem;
-        max-width: 720px;
+        min-width: 0;
+        overflow-y: auto;
       }
-      .hal-note-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        padding: 0.6rem 0.75rem;
+      .hal-title-input {
+        border: none;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--font-sans);
+        font-size: 20px;
+        font-weight: 500;
+        padding: 16px 20px 8px;
+        width: 100%;
       }
-      .hal-note-body {
-        min-height: 320px;
-        background: var(--hal-surface);
-        border: 1px solid var(--hal-rule);
-        border-radius: var(--hal-radius);
-        padding: 1rem 1.1rem;
-        box-shadow: var(--hal-shadow);
+      .hal-title-input::placeholder {
+        color: var(--ink-faint);
       }
-      .hal-note-body .ProseMirror {
-        outline: none;
-        font-size: 0.92rem;
-        line-height: 1.65;
-        min-height: 300px;
-      }
-      .hal-note-body .ProseMirror p {
-        margin: 0 0 0.6em;
-      }
-      .hal-note-body .ProseMirror h1,
-      .hal-note-body .ProseMirror h2,
-      .hal-note-body .ProseMirror h3 {
-        color: var(--hal-accent);
-        margin: 0.7em 0 0.4em;
-        font-weight: 700;
-      }
-      .hal-note-body .ProseMirror ul,
-      .hal-note-body .ProseMirror ol {
-        padding-left: 1.4em;
-        margin: 0 0 0.6em;
-      }
-      .hal-note-body .ProseMirror a {
-        color: var(--hal-cyan);
-      }
-      .hal-note-body .ProseMirror code {
-        background: var(--hal-inset);
-        padding: 0.15em 0.35em;
-        border-radius: 4px;
-        font-family: ui-monospace, monospace;
-      }
-      .hal-note-body .ProseMirror blockquote {
-        border-left: 3px solid var(--hal-accent);
-        margin: 0 0 0.6em;
-        padding-left: 0.9em;
-        color: var(--hal-ink-muted);
-      }
-      .hal-editor-actions {
+      .hal-meta-row {
         display: flex;
-        gap: 0.5rem;
+        align-items: center;
+        gap: var(--sp-8);
+        padding: 0 20px 12px;
       }
+      .hal-meta-time {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-faint);
+      }
+      .hal-meta-spacer {
+        flex: 1;
+      }
+      .hal-icon-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: var(--radius-sm);
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--ink-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        position: relative;
+        transition: background 120ms var(--ease), color 120ms var(--ease), border-color 120ms var(--ease);
+      }
+      .hal-icon-btn:hover {
+        background: var(--surface-raised);
+        color: var(--ink);
+      }
+      .hal-icon-btn.hal-active {
+        background: var(--surface-raised);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .hal-icon-btn:disabled {
+        color: color-mix(in srgb, var(--ink-faint) 50%, transparent);
+        cursor: default;
+        background: transparent;
+      }
+
+      .hal-menu-anchor {
+        position: relative;
+      }
+      .hal-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-float);
+        min-width: 160px;
+        padding: 4px;
+        z-index: 20;
+      }
+      .hal-menu-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: none;
+        color: var(--ink);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        padding: 7px 9px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .hal-menu-item:hover {
+        background: var(--surface-raised);
+      }
+      .hal-menu-item.hal-danger-item {
+        color: var(--danger);
+      }
+
+      /* ---- chip ---- */
+      .hal-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--rule);
+        background: transparent;
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+      }
+      .hal-chip:hover {
+        background: var(--surface-raised);
+      }
+      .hal-chip.hal-selected {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--surface-raised);
+      }
+      .hal-chip .hal-dot {
+        width: 7px;
+        height: 7px;
+      }
+
+      /* ---- toolbar ---- */
       .hal-toolbar {
         display: flex;
         align-items: center;
-        gap: 0.25rem;
+        padding: 7px 11px;
+        border-top: 1px solid var(--rule);
+        border-bottom: 1px solid var(--rule);
+        background: var(--surface);
         flex-wrap: wrap;
-        background: var(--hal-surface);
-        border: 1px solid var(--hal-rule);
-        border-radius: var(--hal-radius);
-        padding: 0.4rem;
-        box-shadow: var(--hal-shadow);
       }
-      .hal-toolbar-btn {
-        background: transparent;
-        border: 1px solid transparent;
-        color: var(--hal-ink);
-        border-radius: var(--hal-radius-sm);
-        width: 30px;
-        height: 30px;
-        font-family: inherit;
-        font-size: 0.85rem;
-        cursor: pointer;
-        transition: background 0.12s ease, border-color 0.12s ease;
-      }
-      .hal-toolbar-btn:hover {
-        background: var(--hal-surface-raised);
-        border-color: var(--hal-rule);
-      }
-      .hal-toolbar-btn.hal-active {
-        border-color: var(--hal-accent);
-        color: var(--hal-accent);
-      }
-      .hal-toolbar-btn-right {
-        margin-left: auto;
-      }
-      .hal-toolbar-select {
-        background: var(--hal-inset);
-        border: 1px solid var(--hal-rule);
-        color: var(--hal-ink);
-        border-radius: var(--hal-radius-sm);
-        height: 30px;
-        padding: 0 0.4rem;
-        font-family: inherit;
-        font-size: 0.8rem;
-      }
-      .hal-toolbar-divider {
-        width: 1px;
-        height: 20px;
-        background: var(--hal-rule);
-        margin: 0 0.3rem;
-      }
-      .hal-color-swatches {
+      .hal-toolbar-group {
         display: flex;
         align-items: center;
-        gap: 0.3rem;
+        gap: 3px;
+        padding: 0 9px;
+        border-right: 1px solid var(--rule);
       }
-      .hal-color-swatch {
+      .hal-toolbar-group:last-child {
+        border-right: none;
+      }
+      .hal-dropdown-btn {
+        height: 28px;
+        padding: 0 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 120ms var(--ease);
+      }
+      .hal-dropdown-btn:hover {
+        background: var(--surface-raised);
+        color: var(--ink);
+      }
+      .hal-attach-btn {
+        height: 28px;
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: transparent;
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .hal-attach-btn:hover {
+        background: var(--surface-raised);
+        color: var(--ink);
+      }
+      .hal-color-swatch-indicator {
+        position: absolute;
+        bottom: 3px;
+        left: 6px;
+        right: 6px;
+        height: 2px;
+        background: var(--cyan);
+        border-radius: 1px;
+      }
+      .hal-swatch-popover {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-float);
+        padding: 8px;
+        display: flex;
+        gap: 6px;
+        z-index: 20;
+      }
+      .hal-swatch {
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        border: 1px solid var(--hal-rule);
+        border: 1px solid var(--rule);
         cursor: pointer;
         padding: 0;
-        transition: transform 0.1s ease;
       }
-      .hal-color-swatch:hover {
+      .hal-swatch:hover {
         transform: scale(1.15);
       }
-      .hal-shortcuts {
-        background: var(--hal-surface);
-        border: 1px solid var(--hal-rule);
-        border-radius: var(--hal-radius-sm);
-        padding: 0.7rem 0.9rem;
-        font-size: 0.78rem;
-        color: var(--hal-ink-muted);
-        line-height: 1.7;
-      }
-      .hal-file-input {
-        display: none;
-      }
-      .hal-uploading {
-        color: var(--hal-ink-muted);
-        font-size: 0.8rem;
-        margin: 0;
-      }
-      .hal-attachment-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
+
+      /* ---- editor body ---- */
+      .hal-body-wrap {
+        position: relative;
+        flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.4rem;
       }
-      .hal-attachment-item {
+      .hal-editor-body {
+        flex: 1;
+        padding: 16px 20px;
+      }
+      .hal-editor-body .ProseMirror {
+        outline: none;
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.6;
+        color: var(--ink);
+        min-height: 200px;
+      }
+      .hal-editor-body .ProseMirror p {
+        margin: 0 0 0.7em;
+      }
+      .hal-editor-body .ProseMirror h1,
+      .hal-editor-body .ProseMirror h2,
+      .hal-editor-body .ProseMirror h3 {
+        color: var(--accent);
+        font-weight: 700;
+        margin: 0.8em 0 0.4em;
+      }
+      .hal-editor-body .ProseMirror ul,
+      .hal-editor-body .ProseMirror ol {
+        padding-left: 1.4em;
+        margin: 0 0 0.7em;
+      }
+      .hal-editor-body .ProseMirror a {
+        color: var(--cyan);
+      }
+      .hal-editor-body .ProseMirror code {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        color: var(--cyan);
+        background: var(--inset);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .hal-editor-body .ProseMirror blockquote {
+        border-left: 3px solid var(--accent);
+        margin: 0 0 0.7em;
+        padding-left: 0.9em;
+        color: var(--ink-muted);
+      }
+      .hal-drop-hint {
+        position: absolute;
+        inset: 8px;
+        border: 1px dashed var(--accent);
+        border-radius: var(--radius-card);
         display: flex;
         align-items: center;
-        gap: 0.6rem;
-        padding: 0.5rem 0.65rem;
-        background: var(--hal-surface);
-        border: 1px solid var(--hal-rule);
-        border-radius: var(--hal-radius-sm);
-        font-size: 0.8rem;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-muted);
+        background: color-mix(in srgb, var(--accent) 6%, transparent);
+        pointer-events: none;
       }
-      .hal-attachment-thumb {
-        width: 30px;
-        height: 30px;
+
+      /* ---- attachments ---- */
+      .hal-attachments-section {
+        padding: 12px 20px 16px;
+        border-top: 1px solid var(--rule);
+      }
+      .hal-attachments-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sp-9);
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0;
+      }
+      .hal-attachment-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        padding: 8px 11px 8px 8px;
+        position: relative;
+        overflow: hidden;
+        max-width: 220px;
+      }
+      .hal-attachment-card:hover {
+        background: var(--surface-raised);
+      }
+      .hal-attachment-card.hal-failed {
+        border-color: var(--danger);
+      }
+      .hal-attachment-well {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        background: var(--inset);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--ink-muted);
+        overflow: hidden;
+      }
+      .hal-attachment-well img {
+        width: 100%;
+        height: 100%;
         object-fit: cover;
-        border-radius: 5px;
       }
-      .hal-attachment-icon {
-        width: 30px;
-        text-align: center;
-        color: var(--hal-ink-faint);
+      .hal-attachment-well.hal-pdf {
+        color: var(--danger);
+      }
+      .hal-attachment-well.hal-image {
+        color: var(--cyan);
+      }
+      .hal-attachment-info {
+        min-width: 0;
       }
       .hal-attachment-name {
-        flex: 1;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 140px;
+      }
+      .hal-attachment-size {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--ink-faint);
+      }
+      .hal-attachment-size.hal-uploading-text {
+        color: var(--accent);
+      }
+      .hal-attachment-size.hal-failed-text {
+        color: var(--danger);
         cursor: pointer;
-        color: var(--hal-cyan);
+        text-decoration: underline;
+      }
+      .hal-attachment-remove {
+        background: none;
+        border: none;
+        color: var(--ink-faint);
+        cursor: pointer;
+        font-size: 14px;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .hal-attachment-remove:hover {
+        color: var(--danger);
+      }
+      .hal-attachment-progress {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 2px;
+        background: var(--accent);
+      }
+
+      /* ---- dialog ---- */
+      .hal-dialog-scrim {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      .hal-dialog {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-float);
+        padding: var(--sp-20);
+        width: 320px;
+      }
+      .hal-dialog-title {
+        font-family: var(--font-mono);
+        font-size: 15px;
+        color: var(--ink);
+        margin: 0 0 8px;
+      }
+      .hal-dialog-body {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--ink-muted);
+        margin: 0 0 20px;
+      }
+      .hal-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .hal-dialog-btn {
+        height: 32px;
+        padding: 0 14px;
+        border-radius: var(--radius-sm);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        cursor: pointer;
+        background: transparent;
+      }
+      .hal-dialog-btn-cancel {
+        border: 1px solid var(--rule);
+        color: var(--ink-muted);
+      }
+      .hal-dialog-btn-cancel:hover {
+        background: var(--surface-raised);
+      }
+      .hal-dialog-btn-danger {
+        border: 1px solid var(--danger);
+        color: var(--danger);
+      }
+      .hal-dialog-btn-danger:hover {
+        background: var(--danger);
+        color: var(--bg);
+      }
+
+      /* ---- empty states ---- */
+      .hal-empty-editor {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 4px;
+        padding: 40px;
+      }
+      .hal-empty-well {
+        width: 44px;
+        height: 44px;
+        background: var(--surface);
+        border-radius: var(--radius-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+      .hal-empty-title {
+        font-family: var(--font-sans);
+        font-size: 15px;
+        color: var(--ink);
+        margin: 0;
+      }
+      .hal-empty-body {
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--ink-muted);
+        margin: 0;
+      }
+
+      /* ---- toast ---- */
+      .hal-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-float);
+        padding: var(--sp-8) 14px;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--ink);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        z-index: 60;
+        animation: hal-toast-in 120ms var(--ease);
+      }
+      .hal-toast-icon {
+        display: inline-flex;
+      }
+      .hal-toast-success .hal-toast-icon {
+        color: var(--accent);
+      }
+      .hal-toast-error .hal-toast-icon {
+        color: var(--danger);
+      }
+      .hal-toast-neutral .hal-toast-icon {
+        color: var(--ink-muted);
+      }
+      @keyframes hal-toast-in {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
       }
     </style>
   </head>
