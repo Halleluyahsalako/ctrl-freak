@@ -25,8 +25,9 @@ function halCategoriesCollection(uid: string) {
 export async function halCreateNote(
   uid: string,
   note: Omit<HalNote, "id" | "updatedAt">,
-): Promise<void> {
-  await addDoc(halNotesCollection(uid), { ...note, updatedAt: Date.now() });
+): Promise<string> {
+  const docRef = await addDoc(halNotesCollection(uid), { ...note, updatedAt: Date.now() });
+  return docRef.id;
 }
 
 export async function halUpdateNote(

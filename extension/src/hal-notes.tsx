@@ -98,6 +98,7 @@ function HalNotesApp() {
   const halEditorRef = useRef<Editor | null>(null);
   const halFileInputRef = useRef<HTMLInputElement>(null);
   const halUploadAttachmentRef = useRef<(blob: Blob, name: string) => void>(() => {});
+  const halAutosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -109,6 +110,39 @@ function HalNotesApp() {
     document.addEventListener("mousedown", halHandleOutsideClick);
     return () => document.removeEventListener("mousedown", halHandleOutsideClick);
   }, [halOpenMenu]);
+
+  // Real autosave — debounced create-then-update, not just a manual Save
+  // button. This is also what makes "attach a file before the note exists
+  // yet" actually work: the first attachment (even with no title typed)
+  // gives this something to save, which creates the real Firestore doc and
+  // points halSelectedNoteId at it, so the attachment isn't just sitting in
+  // local state with nowhere to belong.
+  useEffect(() => {
+    if (!halUser || !halHasSelection) return;
+    if (!halTitle.trim() && !halBody.trim() && halAttachments.length === 0) return;
+    const timer = window.setTimeout(async () => {
+      const payload = {
+        title: halTitle.trim() || "Untitled note",
+        body: halBody,
+        categoryId: halNoteCategoryId || undefined,
+        attachments: halAttachments,
+        pinned: halNotePinned,
+      };
+      try {
+        if (halSelectedNoteId) {
+          await halUpdateNote(halUser.uid, halSelectedNoteId, payload);
+        } else {
+          const newId = await halCreateNote(halUser.uid, payload);
+          setHalSelectedNoteId(newId);
+        }
+        setHalUpdatedAt(Date.now());
+      } catch (err) {
+        console.error("hal:", err);
+      }
+    }, 700);
+    halAutosaveTimerRef.current = timer;
+    return () => clearTimeout(timer);
+  }, [halUser, halHasSelection, halTitle, halBody, halNoteCategoryId, halAttachments, halNotePinned]);
 
   useEffect(() => {
     if (!halUser) {
@@ -258,6 +292,7 @@ function HalNotesApp() {
 
   async function halHandleSave() {
     if (!halUser || !halTitle.trim()) return;
+    if (halAutosaveTimerRef.current) clearTimeout(halAutosaveTimerRef.current);
     const payload = {
       title: halTitle.trim(),
       body: halBody,
