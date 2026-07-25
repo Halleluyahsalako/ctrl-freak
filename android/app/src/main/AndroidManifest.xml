@@ -4,6 +4,8 @@
 
     <application
         android:label="Ctrl+Freak"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.HalCtrlFreak"
         android:allowBackup="false">
 
