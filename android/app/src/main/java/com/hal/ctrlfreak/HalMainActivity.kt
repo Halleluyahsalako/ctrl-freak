@@ -46,7 +46,10 @@ import com.hal.ctrlfreak.data.HalDevice
 import com.hal.ctrlfreak.drive.halUploadFileToDrive
 import com.hal.ctrlfreak.sync.halPushClip
 import com.hal.ctrlfreak.sync.halSubscribeToClips
+import com.hal.ctrlfreak.ui.HalNotesScreen
 import kotlinx.coroutines.launch
+
+private enum class HalScreen { CLIPS, NOTES }
 
 class HalMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,64 +135,75 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
             }) { Text("Sign in with Google") }
         } else {
             val uid = user!!.uid
-            val clips by halSubscribeToClips(uid).collectAsState(initial = emptyList())
+            var screen by remember { mutableStateOf(HalScreen.CLIPS) }
 
-            Button(
-                enabled = !busy,
-                onClick = {
-                    scope.launch {
-                        busy = true
-                        error = null
-                        try {
-                            if (halClipboardHasImage(context)) {
-                                val bytes = halReadClipboardImageBytes(context)
-                                if (bytes != null) {
-                                    val token = halGetDriveAccessToken(activity)
-                                    val driveFileId = halUploadFileToDrive(
-                                        token, bytes, "image/png", "hal-clip-${System.currentTimeMillis()}.png",
-                                    )
-                                    halPushClip(
-                                        uid,
-                                        HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID),
-                                    )
+            Row {
+                Button(onClick = { screen = HalScreen.CLIPS }) { Text("Clips") }
+                Button(onClick = { screen = HalScreen.NOTES }) { Text("Notes") }
+            }
+
+            if (screen == HalScreen.NOTES) {
+                HalNotesScreen(uid = uid)
+            } else {
+                val clips by halSubscribeToClips(uid).collectAsState(initial = emptyList())
+
+                Button(
+                    enabled = !busy,
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            error = null
+                            try {
+                                if (halClipboardHasImage(context)) {
+                                    val bytes = halReadClipboardImageBytes(context)
+                                    if (bytes != null) {
+                                        val token = halGetDriveAccessToken(activity)
+                                        val driveFileId = halUploadFileToDrive(
+                                            token, bytes, "image/png", "hal-clip-${System.currentTimeMillis()}.png",
+                                        )
+                                        halPushClip(
+                                            uid,
+                                            HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID),
+                                        )
+                                    }
+                                } else {
+                                    val text = halReadClipboardText(context)
+                                    if (!text.isNullOrEmpty()) {
+                                        halPushClip(
+                                            uid,
+                                            HalClipItem(kind = HalClipKind.TEXT, text = text, originDevice = HalDevice.ANDROID),
+                                        )
+                                    }
                                 }
-                            } else {
-                                val text = halReadClipboardText(context)
-                                if (!text.isNullOrEmpty()) {
-                                    halPushClip(
-                                        uid,
-                                        HalClipItem(kind = HalClipKind.TEXT, text = text, originDevice = HalDevice.ANDROID),
-                                    )
-                                }
+                            } catch (e: Exception) {
+                                error = e.message
+                            } finally {
+                                busy = false
                             }
-                        } catch (e: Exception) {
-                            error = e.message
-                        } finally {
-                            busy = false
                         }
-                    }
-                },
-            ) { Text(if (busy) "Syncing…" else "Sync clipboard now") }
+                    },
+                ) { Text(if (busy) "Syncing…" else "Sync clipboard now") }
 
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            LazyColumn {
-                items(clips) { clip ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable {
-                                // Text paste-back only tonight — writing an
-                                // image clip back to the system clipboard
-                                // (ClipData.newUri with a content:// provider)
-                                // is a follow-up, not done in this pass.
-                                if (clip.kind != HalClipKind.IMAGE && clip.text != null) {
-                                    halWriteClipboardText(context, clip.text)
-                                }
-                            },
-                    ) {
-                        Text(if (clip.kind == HalClipKind.IMAGE) "[image]" else clip.text ?: "")
+                LazyColumn {
+                    items(clips) { clip ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable {
+                                    // Text paste-back only tonight — writing an
+                                    // image clip back to the system clipboard
+                                    // (ClipData.newUri with a content:// provider)
+                                    // is a follow-up, not done in this pass.
+                                    if (clip.kind != HalClipKind.IMAGE && clip.text != null) {
+                                        halWriteClipboardText(context, clip.text)
+                                    }
+                                },
+                        ) {
+                            Text(if (clip.kind == HalClipKind.IMAGE) "[image]" else clip.text ?: "")
+                        }
                     }
                 }
             }
