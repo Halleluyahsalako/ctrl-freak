@@ -1,20 +1,24 @@
 package com.hal.ctrlfreak.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NoteAlt
@@ -32,6 +36,7 @@ import com.hal.ctrlfreak.data.HalNote
 import com.hal.ctrlfreak.ui.components.CfEmptyState
 import com.hal.ctrlfreak.ui.components.CfPinToggle
 import com.hal.ctrlfreak.ui.theme.CfColor
+import com.hal.ctrlfreak.ui.theme.CfRadius
 import com.hal.ctrlfreak.ui.theme.CfSpace
 import com.hal.ctrlfreak.ui.theme.CfType
 
@@ -127,17 +132,22 @@ private fun CfNoteRow(
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
 ) {
+    val borderColor = if (note.pinned) CfColor.Accent else CfColor.Rule
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(CfRadius.Card))
+            .background(CfColor.Surface)
+            .border(1.dp, borderColor, RoundedCornerShape(CfRadius.Card))
             .clickable(onClick = onClick)
-            .padding(vertical = CfSpace.S8),
+            .padding(vertical = CfSpace.S10, horizontal = CfSpace.S11),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(color))
-            androidx.compose.foundation.layout.Spacer(Modifier.padding(start = CfSpace.S8))
+            Spacer(Modifier.width(CfSpace.S8))
             Text(
                 note.title,
                 style = CfType.ListTitle,

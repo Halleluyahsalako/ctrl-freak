@@ -1,6 +1,5 @@
 package com.hal.ctrlfreak.auth
 
-import android.app.Activity
 import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
@@ -60,12 +59,4 @@ suspend fun halRequestDriveAuthorization(context: Context): AuthorizationResult 
         .setRequestedScopes(listOf(Scope(HAL_DRIVE_SCOPE)))
         .build()
     return Identity.getAuthorizationClient(context).authorize(request).await()
-}
-
-suspend fun halGetDriveAccessToken(activity: Activity): String {
-    val result = halRequestDriveAuthorization(activity)
-    return result.accessToken
-        ?: throw IllegalStateException(
-            "No access token — result.pendingIntent must be launched for consent first",
-        )
 }

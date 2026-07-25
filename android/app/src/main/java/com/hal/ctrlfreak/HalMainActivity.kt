@@ -8,7 +8,10 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -39,7 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.hal.ctrlfreak.auth.halAuth
-import com.hal.ctrlfreak.auth.halGetDriveAccessToken
+import com.hal.ctrlfreak.auth.halRequestDriveAuthorization
 import com.hal.ctrlfreak.auth.halSignIn
 import com.hal.ctrlfreak.clipboard.halClipboardHasImage
 import com.hal.ctrlfreak.clipboard.halReadClipboardImageBytes
@@ -75,11 +78,20 @@ import kotlinx.coroutines.launch
 private enum class HalTab { CLIPBOARD, NOTES }
 
 class HalMainActivity : ComponentActivity() {
+    // A plain `intent` read only happens once, at setContent's first
+    // composition. If the app is already running and receives a new share
+    // via onNewIntent (standard launch mode reuses the top instance in that
+    // case), Compose never observes the change — the share silently does
+    // nothing, which is exactly what was reported ("clicked share, then
+    // nothing"). Holding it as Compose state fixes that.
+    private var halCurrentIntent by mutableStateOf<Intent?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        halCurrentIntent = intent
         setContent {
             CfTheme {
-                HalApp(activity = this, sharedIntent = intent)
+                HalApp(activity = this, sharedIntent = halCurrentIntent)
             }
         }
     }
@@ -87,6 +99,7 @@ class HalMainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        halCurrentIntent = intent
     }
 }
 
@@ -122,7 +135,45 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     var editCategoryId by remember { mutableStateOf<String?>(null) }
     var editPinned by remember { mutableStateOf(false) }
 
-    var pendingShareIntent by remember { mutableStateOf(sharedIntent?.takeIf { it.action == Intent.ACTION_SEND }) }
+    var pendingShareIntent by remember { mutableStateOf<Intent?>(null) }
+    // Reacts to sharedIntent changing (including a share arriving while the
+    // app is already open — see the halCurrentIntent fix in the Activity).
+    LaunchedEffect(sharedIntent) {
+        if (sharedIntent?.action == Intent.ACTION_SEND) {
+            pendingShareIntent = sharedIntent
+        }
+    }
+
+    var driveConsentDeferred by remember {
+        mutableStateOf<kotlinx.coroutines.CompletableDeferred<Boolean>?>(null)
+    }
+    val driveConsentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        driveConsentDeferred?.complete(result.resultCode == Activity.RESULT_OK)
+        driveConsentDeferred = null
+    }
+
+    // Requests a Drive access token, launching the real consent screen when
+    // silent authorization isn't enough (always true the first time). The
+    // previous version threw instead of ever showing this prompt, so every
+    // image sync/share failed silently — this is the actual fix, not just
+    // a rewire.
+    suspend fun halEnsureDriveAccessToken(): String {
+        val first = halRequestDriveAuthorization(activity)
+        first.accessToken?.let { return it }
+
+        val pendingIntent = first.pendingIntent
+            ?: throw IllegalStateException("Drive access wasn't granted")
+        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        driveConsentDeferred = deferred
+        driveConsentLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+        val granted = deferred.await()
+        if (!granted) throw IllegalStateException("Drive access wasn't granted")
+
+        val retry = halRequestDriveAuthorization(activity)
+        return retry.accessToken ?: throw IllegalStateException("Drive access wasn't granted")
+    }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { halUser = it.currentUser }
@@ -160,7 +211,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
             if (sharedImageUri != null) {
                 val bytes = context.contentResolver.openInputStream(sharedImageUri)?.use { it.readBytes() }
                 if (bytes != null) {
-                    val token = halGetDriveAccessToken(activity)
+                    val token = halEnsureDriveAccessToken()
                     val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-share-${System.currentTimeMillis()}.png")
                     halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
                 }
@@ -317,7 +368,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                                 if (halClipboardHasImage(context)) {
                                     val bytes = halReadClipboardImageBytes(context)
                                     if (bytes != null) {
-                                        val token = halGetDriveAccessToken(activity)
+                                        val token = halEnsureDriveAccessToken()
                                         val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-clip-${System.currentTimeMillis()}.png")
                                         halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
                                         halShowSnackbar("Synced 1 item", CfSnackbarKind.Success)
