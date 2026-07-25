@@ -165,7 +165,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     // Reacts to sharedIntent changing (including a share arriving while the
     // app is already open — see the halCurrentIntent fix in the Activity).
     LaunchedEffect(sharedIntent) {
-        if (sharedIntent?.action == Intent.ACTION_SEND) {
+        if (sharedIntent?.action == Intent.ACTION_SEND || sharedIntent?.action == Intent.ACTION_SEND_MULTIPLE) {
             pendingShareIntent = sharedIntent
         }
     }
@@ -279,18 +279,28 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
         val uid = halUser?.uid ?: return@LaunchedEffect
         val intent = pendingShareIntent ?: return@LaunchedEffect
         try {
-            val sharedImageUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
-
-            if (sharedImageUri != null) {
-                val bytes = context.contentResolver.openInputStream(sharedImageUri)?.use { it.readBytes() }
-                if (bytes != null) {
-                    val token = halEnsureDriveAccessToken()
-                    val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-share-${System.currentTimeMillis()}.png")
+            if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+                val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+                val token = if (uris.isNotEmpty()) halEnsureDriveAccessToken() else null
+                for ((index, uri) in uris.withIndex()) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
+                    val driveFileId = halUploadFileToDrive(token!!, bytes, "image/png", "hal-share-${System.currentTimeMillis()}-$index.png")
                     halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
                 }
-            } else if (!sharedText.isNullOrEmpty()) {
-                halPushClip(uid, HalClipItem(kind = HalClipKind.TEXT, text = sharedText, originDevice = HalDevice.ANDROID))
+            } else {
+                val sharedImageUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+
+                if (sharedImageUri != null) {
+                    val bytes = context.contentResolver.openInputStream(sharedImageUri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        val token = halEnsureDriveAccessToken()
+                        val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-share-${System.currentTimeMillis()}.png")
+                        halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
+                    }
+                } else if (!sharedText.isNullOrEmpty()) {
+                    halPushClip(uid, HalClipItem(kind = HalClipKind.TEXT, text = sharedText, originDevice = HalDevice.ANDROID))
+                }
             }
             pendingShareIntent = null
 
@@ -341,6 +351,37 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     }
 
     val uid = halUser!!.uid
+
+    // Real autosave — mirrors the extension (hal-notes.tsx): debounced
+    // create-then-update instead of relying on the manual Save button, so a
+    // draft never gets lost switching notes/tabs and attaching a file to a
+    // brand-new note doesn't require creating it first. LaunchedEffect
+    // restarting on any key change IS the debounce (and safely supersedes a
+    // stale in-flight save) — no manual timer bookkeeping needed here the
+    // way the JS side required.
+    LaunchedEffect(editingNoteId, isCreatingNote, editTitle, editBody, editCategoryId, editPinned, editAttachments) {
+        if (editingNoteId == null && !isCreatingNote) return@LaunchedEffect
+        if (editTitle.isBlank() && editBody.isBlank() && editAttachments.isEmpty()) return@LaunchedEffect
+        kotlinx.coroutines.delay(700)
+        val note = HalNote(
+            title = editTitle.trim().ifBlank { "Untitled note" },
+            body = editBody,
+            categoryId = editCategoryId,
+            pinned = editPinned,
+            attachments = editAttachments,
+        )
+        try {
+            val id = editingNoteId
+            if (id != null) {
+                halUpdateNote(uid, id, note)
+            } else {
+                editingNoteId = halCreateNote(uid, note)
+            }
+        } catch (e: Exception) {
+            // Manual Save is still there and will surface the error via its
+            // own snackbar if the connection is actually down.
+        }
+    }
 
     Scaffold(
         containerColor = CfColor.Background,
@@ -536,6 +577,25 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                             try {
                                 halDeleteNotes(uid, ids.toList())
                                 halShowSnackbar("Deleted ${ids.size} note${if (ids.size == 1) "" else "s"}", CfSnackbarKind.Neutral)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
+                    onCreateCategory = { name ->
+                        scope.launch {
+                            try {
+                                halCreateCategory(uid, HalCategory(name = name, color = "#E0A75E"))
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
+                    onDeleteCategory = { categoryId ->
+                        scope.launch {
+                            try {
+                                halDeleteCategory(uid, categoryId)
+                                if (activeCategoryId == categoryId) activeCategoryId = null
                             } catch (e: Exception) {
                                 halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
                             }

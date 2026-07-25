@@ -59,9 +59,9 @@ fun halSubscribeToClips(uid: String): Flow<List<HalClipItem>> = callbackFlow {
 
 // ---- Notes ----
 
-suspend fun halCreateNote(uid: String, note: HalNote) {
+suspend fun halCreateNote(uid: String, note: HalNote): String {
     val data = note.copy(id = "", updatedAt = System.currentTimeMillis())
-    halNotes(uid).add(data).await()
+    return halNotes(uid).add(data).await().id
 }
 
 suspend fun halUpdateNote(uid: String, noteId: String, note: HalNote) {
