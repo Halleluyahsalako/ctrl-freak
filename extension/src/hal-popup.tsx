@@ -9,7 +9,13 @@ import {
   halWriteImageToClipboard,
 } from "./hal-clipboard";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
-import { halPushClip, halSubscribeToClips, halSetClipPinned } from "./hal-sync";
+import {
+  halPushClip,
+  halSubscribeToClips,
+  halSetClipPinned,
+  halDeleteClips,
+  halClearAllClips,
+} from "./hal-sync";
 import { useHalToast, HalToast } from "./hal-toast";
 import {
   HalIconPin,
@@ -19,6 +25,7 @@ import {
   HalIconMobile,
   HalIconClipboardPlus,
   HalIconClipboardOff,
+  HalIconCheck,
 } from "./hal-icons";
 import type { HalClipItem } from "@shared/schema";
 
@@ -39,6 +46,10 @@ function HalPopup() {
   const [halClips, setHalClips] = useState<HalClipItem[]>([]);
   const [halBusy, setHalBusy] = useState(false);
   const [halSignInError, setHalSignInError] = useState<string | null>(null);
+  const [halSelectMode, setHalSelectMode] = useState(false);
+  const [halSelectedIds, setHalSelectedIds] = useState<Set<string>>(new Set());
+  const [halConfirmClearAll, setHalConfirmClearAll] = useState(false);
+  const [halConfirmDeleteSelected, setHalConfirmDeleteSelected] = useState(false);
   const { toast, show: halToast } = useHalToast();
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
@@ -125,6 +136,50 @@ function HalPopup() {
     }
   }
 
+  function halToggleSelectMode() {
+    setHalSelectMode((on) => !on);
+    setHalSelectedIds(new Set());
+  }
+
+  function halToggleSelected(clipId: string) {
+    setHalSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clipId)) next.delete(clipId);
+      else next.add(clipId);
+      return next;
+    });
+  }
+
+  function halHandleCardClick(clip: HalClipItem) {
+    if (halSelectMode) halToggleSelected(clip.id);
+    else halHandlePaste(clip);
+  }
+
+  async function halConfirmClearAllClips() {
+    if (!halUser) return;
+    setHalConfirmClearAll(false);
+    try {
+      await halClearAllClips(halUser.uid);
+      halToast("Clipboard cleared", "success");
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
+    }
+  }
+
+  async function halConfirmDeleteSelectedClips() {
+    if (!halUser) return;
+    setHalConfirmDeleteSelected(false);
+    const ids = [...halSelectedIds];
+    try {
+      await halDeleteClips(halUser.uid, ids);
+      halToast(`Deleted ${ids.length} item${ids.length === 1 ? "" : "s"}`, "success");
+      setHalSelectMode(false);
+      setHalSelectedIds(new Set());
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
+    }
+  }
+
   if (!halUser) {
     return (
       <main class="hal-signin">
@@ -171,7 +226,48 @@ function HalPopup() {
             </>
           )}
         </button>
-        <p class="hal-count-label">{halClips.length} recent · pinned first</p>
+        <div class="hal-toolbar-row">
+          <p class="hal-count-label">{halClips.length} recent · pinned first</p>
+          <div class="hal-toolbar-actions">
+            {halSelectMode ? (
+              <button class="hal-text-btn" onClick={halToggleSelectMode}>
+                Cancel
+              </button>
+            ) : (
+              <>
+                <button
+                  class="hal-text-btn"
+                  onClick={halToggleSelectMode}
+                  disabled={halClips.length === 0}
+                >
+                  Select
+                </button>
+                <button
+                  class="hal-text-btn hal-text-btn-danger"
+                  onClick={() => setHalConfirmClearAll(true)}
+                  disabled={halClips.length === 0}
+                >
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {halSelectMode && (
+          <div class="hal-select-bar">
+            <span>{halSelectedIds.size} selected</span>
+            <div class="hal-select-bar-actions">
+              <button
+                class="hal-text-btn hal-text-btn-danger"
+                disabled={halSelectedIds.size === 0}
+                onClick={() => setHalConfirmDeleteSelected(true)}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
 
         {halOrdered.length === 0 ? (
           <div class="hal-empty-state">
@@ -188,45 +284,99 @@ function HalPopup() {
             {halOrdered.map((clip) => (
               <li
                 key={clip.id}
-                class={`hal-clip-card ${clip.pinned ? "hal-pinned-card" : ""}`}
-                onClick={() => halHandlePaste(clip)}
-                title="Click to copy"
+                class={`hal-clip-card ${clip.pinned ? "hal-pinned-card" : ""} ${halSelectMode ? "hal-select-mode" : ""}`}
+                onClick={() => halHandleCardClick(clip)}
+                title={halSelectMode ? "Click to select" : "Click to copy"}
               >
-                <div class="hal-clip-top">
-                  {clip.kind === "image" ? (
-                    <div class="hal-clip-image-row">
-                      <div class="hal-thumb-well">
-                        <HalIconImage />
-                      </div>
-                      <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>[image]</span>
-                    </div>
-                  ) : (
-                    <span
-                      class={`hal-clip-text ${clip.text && HAL_CODE_LIKE.test(clip.text) ? "hal-code-like" : ""}`}
-                    >
-                      {clip.text}
-                    </span>
-                  )}
-                  <button
-                    class={`hal-pin-btn ${clip.pinned ? "hal-pinned" : ""}`}
-                    onClick={(e) => halHandleTogglePin(e, clip)}
-                    aria-label={clip.pinned ? "Unpin" : "Pin"}
-                    title={clip.pinned ? "Unpin" : "Pin"}
+                {halSelectMode && (
+                  <span
+                    class={`hal-checkbox ${halSelectedIds.has(clip.id) ? "hal-checked" : ""}`}
+                    aria-label={halSelectedIds.has(clip.id) ? "Selected" : "Not selected"}
                   >
-                    <HalIconPin />
-                  </button>
-                </div>
-                <div class="hal-clip-meta">
-                  {clip.originDevice === "android" ? <HalIconMobile /> : <HalIconDesktop />}
-                  <span>{clip.originDevice}</span>
-                  <span>·</span>
-                  <span>{halRelativeTime(clip.createdAt)}</span>
+                    {halSelectedIds.has(clip.id) && <HalIconCheck size={11} />}
+                  </span>
+                )}
+                <div class="hal-clip-body">
+                  <div class="hal-clip-top">
+                    {clip.kind === "image" ? (
+                      <div class="hal-clip-image-row">
+                        <div class="hal-thumb-well">
+                          <HalIconImage />
+                        </div>
+                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>[image]</span>
+                      </div>
+                    ) : (
+                      <span
+                        class={`hal-clip-text ${clip.text && HAL_CODE_LIKE.test(clip.text) ? "hal-code-like" : ""}`}
+                      >
+                        {clip.text}
+                      </span>
+                    )}
+                    {!halSelectMode && (
+                      <button
+                        class={`hal-pin-btn ${clip.pinned ? "hal-pinned" : ""}`}
+                        onClick={(e) => halHandleTogglePin(e, clip)}
+                        aria-label={clip.pinned ? "Unpin" : "Pin"}
+                        title={clip.pinned ? "Unpin" : "Pin"}
+                      >
+                        <HalIconPin />
+                      </button>
+                    )}
+                  </div>
+                  <div class="hal-clip-meta">
+                    {clip.originDevice === "android" ? <HalIconMobile /> : <HalIconDesktop />}
+                    <span>{clip.originDevice}</span>
+                    <span>·</span>
+                    <span>{halRelativeTime(clip.createdAt)}</span>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      {halConfirmClearAll && (
+        <div class="hal-dialog-scrim" onClick={() => setHalConfirmClearAll(false)}>
+          <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+            <p class="hal-dialog-title">Clear all clipboard items?</p>
+            <p class="hal-dialog-body">
+              This deletes all {halClips.length} synced item{halClips.length === 1 ? "" : "s"} on every
+              device. This can't be undone.
+            </p>
+            <div class="hal-dialog-actions">
+              <button class="hal-dialog-btn hal-dialog-btn-cancel" onClick={() => setHalConfirmClearAll(false)}>
+                Cancel
+              </button>
+              <button class="hal-dialog-btn hal-dialog-btn-danger" onClick={halConfirmClearAllClips}>
+                Clear all
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {halConfirmDeleteSelected && (
+        <div class="hal-dialog-scrim" onClick={() => setHalConfirmDeleteSelected(false)}>
+          <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+            <p class="hal-dialog-title">
+              Delete {halSelectedIds.size} item{halSelectedIds.size === 1 ? "" : "s"}?
+            </p>
+            <p class="hal-dialog-body">This can't be undone.</p>
+            <div class="hal-dialog-actions">
+              <button
+                class="hal-dialog-btn hal-dialog-btn-cancel"
+                onClick={() => setHalConfirmDeleteSelected(false)}
+              >
+                Cancel
+              </button>
+              <button class="hal-dialog-btn hal-dialog-btn-danger" onClick={halConfirmDeleteSelectedClips}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <HalToast toast={toast} position="popup" />
     </main>

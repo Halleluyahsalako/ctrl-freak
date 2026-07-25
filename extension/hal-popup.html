@@ -139,11 +139,149 @@
         color: color-mix(in srgb, var(--bg) 60%, transparent);
         cursor: default;
       }
+      .hal-toolbar-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 5px 0 var(--sp-9);
+      }
       .hal-count-label {
         font-family: var(--font-mono);
         font-size: 10px;
         color: var(--ink-faint);
-        margin: 5px 0 var(--sp-9);
+        margin: 0;
+      }
+      .hal-toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-11);
+      }
+      .hal-text-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--ink-faint);
+        transition: color 120ms var(--ease);
+      }
+      .hal-text-btn:hover {
+        color: var(--ink-muted);
+      }
+      .hal-text-btn.hal-text-btn-danger:hover {
+        color: var(--danger);
+      }
+      .hal-text-btn:disabled {
+        color: var(--ink-faint);
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      /* ---- select mode ---- */
+      .hal-select-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-sm);
+        padding: var(--sp-8) var(--sp-9);
+        margin-bottom: var(--sp-9);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-muted);
+      }
+      .hal-select-bar-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-11);
+      }
+      .hal-checkbox {
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 1px solid var(--rule);
+        background: var(--inset);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--bg);
+        transition: background 120ms var(--ease), border-color 120ms var(--ease);
+      }
+      .hal-checkbox.hal-checked {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .hal-clip-card.hal-select-mode {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--sp-8);
+      }
+      .hal-clip-card.hal-select-mode .hal-clip-body {
+        flex: 1;
+        min-width: 0;
+      }
+
+      /* ---- dialog ---- */
+      .hal-dialog-scrim {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      .hal-dialog {
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-float);
+        padding: var(--sp-16);
+        width: 280px;
+      }
+      .hal-dialog-title {
+        font-family: var(--font-mono);
+        font-size: 14px;
+        color: var(--ink);
+        margin: 0 0 8px;
+      }
+      .hal-dialog-body {
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--ink-muted);
+        margin: 0 0 16px;
+      }
+      .hal-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .hal-dialog-btn {
+        height: 30px;
+        padding: 0 12px;
+        border-radius: var(--radius-sm);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        cursor: pointer;
+        background: transparent;
+      }
+      .hal-dialog-btn-cancel {
+        border: 1px solid var(--rule);
+        color: var(--ink-muted);
+      }
+      .hal-dialog-btn-cancel:hover {
+        background: var(--surface-raised);
+      }
+      .hal-dialog-btn-danger {
+        border: 1px solid var(--danger);
+        color: var(--danger);
+      }
+      .hal-dialog-btn-danger:hover {
+        background: var(--danger);
+        color: var(--bg);
       }
 
       /* ---- feed ---- */
