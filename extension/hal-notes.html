@@ -123,6 +123,86 @@
         display: flex;
         gap: 0.5rem;
       }
+      .hal-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .hal-toolbar-btn {
+        background: #0d0e16;
+        border: 1px solid #2a2c3d;
+        color: #e9e9f0;
+        border-radius: 4px;
+        width: 28px;
+        height: 28px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .hal-toolbar-btn.hal-active {
+        border-color: #d99b47;
+        color: #d99b47;
+      }
+      .hal-toolbar-btn-right {
+        margin-left: auto;
+        width: auto;
+        padding: 0 0.6rem;
+      }
+      .hal-file-input {
+        display: none;
+      }
+      .hal-note-preview {
+        min-height: 320px;
+        background: #0d0e16;
+        border: 1px solid #2a2c3d;
+        border-radius: 4px;
+        padding: 0.75rem;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.9rem;
+        line-height: 1.6;
+        overflow-wrap: break-word;
+      }
+      .hal-note-preview :first-child {
+        margin-top: 0;
+      }
+      .hal-uploading {
+        color: #9a9cb3;
+        font-size: 0.8rem;
+        margin: 0;
+      }
+      .hal-attachment-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .hal-attachment-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.5rem;
+        background: #0d0e16;
+        border: 1px solid #2a2c3d;
+        border-radius: 4px;
+        font-size: 0.8rem;
+      }
+      .hal-attachment-thumb {
+        width: 28px;
+        height: 28px;
+        object-fit: cover;
+        border-radius: 3px;
+      }
+      .hal-attachment-icon {
+        width: 28px;
+        text-align: center;
+      }
+      .hal-attachment-name {
+        flex: 1;
+        cursor: pointer;
+        color: #6cbcc4;
+      }
     </style>
   </head>
   <body>

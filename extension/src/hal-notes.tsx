@@ -1,7 +1,10 @@
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { onAuthStateChanged, type User } from "firebase/auth";
+import { marked } from "marked";
 import { halAuth } from "./hal-firebase";
+import { halGetValidAccessToken } from "./hal-auth";
+import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
 import {
   halCreateNote,
   halUpdateNote,
@@ -11,9 +14,10 @@ import {
   halDeleteCategory,
   halSubscribeToCategories,
 } from "./hal-notes-sync";
-import type { HalNote, HalCategory } from "@shared/schema";
+import type { HalNote, HalCategory, HalAttachment } from "@shared/schema";
 
 const HAL_CATEGORY_COLORS = ["#d99b47", "#6cbcc4", "#5fcf9a", "#e5645c", "#9a9cb3"];
+const HAL_IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 function HalNotesApp() {
   const [halUser, setHalUser] = useState<User | null>(null);
@@ -24,9 +28,16 @@ function HalNotesApp() {
   const [halTitle, setHalTitle] = useState("");
   const [halBody, setHalBody] = useState("");
   const [halNoteCategoryId, setHalNoteCategoryId] = useState<string>("");
+  const [halAttachments, setHalAttachments] = useState<HalAttachment[]>([]);
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
   const [halSearch, setHalSearch] = useState("");
   const [halError, setHalError] = useState<string | null>(null);
+  const [halViewMode, setHalViewMode] = useState<"edit" | "preview">("edit");
+  const [halUploading, setHalUploading] = useState(false);
+  const [halThumbs, setHalThumbs] = useState<Record<string, string>>({});
+
+  const halBodyRef = useRef<HTMLTextAreaElement>(null);
+  const halFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -57,6 +68,8 @@ function HalNotesApp() {
     setHalTitle(note?.title ?? "");
     setHalBody(note?.body ?? "");
     setHalNoteCategoryId(note?.categoryId ?? "");
+    setHalAttachments(note?.attachments ?? []);
+    setHalViewMode("edit");
   }
 
   async function halHandleSave() {
@@ -66,7 +79,7 @@ function HalNotesApp() {
       title: halTitle.trim(),
       body: halBody,
       categoryId: halNoteCategoryId || undefined,
-      attachments: [],
+      attachments: halAttachments,
     };
     try {
       if (halSelectedNoteId) {
@@ -114,6 +127,99 @@ function HalNotesApp() {
     }
   }
 
+  // ---- Attachments ----
+
+  async function halUploadAttachment(blob: Blob, name: string) {
+    setHalUploading(true);
+    setHalError(null);
+    try {
+      const accessToken = await halGetValidAccessToken();
+      const driveFileId = await halUploadFileToDrive(accessToken, blob, name);
+      setHalAttachments((prev) => [...prev, { driveFileId, name }]);
+      if (HAL_IMAGE_EXT.test(name)) {
+        setHalThumbs((prev) => ({ ...prev, [driveFileId]: URL.createObjectURL(blob) }));
+      }
+    } catch (err) {
+      setHalError((err as Error).message);
+    } finally {
+      setHalUploading(false);
+    }
+  }
+
+  function halHandleFilePick(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) halUploadAttachment(file, file.name);
+    (e.target as HTMLInputElement).value = "";
+  }
+
+  function halHandleBodyPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) {
+          const ext = item.type.split("/")[1] ?? "png";
+          halUploadAttachment(blob, `pasted-${Date.now()}.${ext}`);
+        }
+        return;
+      }
+    }
+    // otherwise let plain text paste through normally
+  }
+
+  function halRemoveAttachment(driveFileId: string) {
+    setHalAttachments((prev) => prev.filter((a) => a.driveFileId !== driveFileId));
+  }
+
+  async function halDownloadAttachment(att: HalAttachment) {
+    setHalError(null);
+    try {
+      const accessToken = await halGetValidAccessToken();
+      const blob = await halFetchDriveFileBlob(accessToken, att.driveFileId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = att.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
+  }
+
+  // ---- Markdown toolbar ----
+
+  function halInsertMarkdown(before: string, after: string) {
+    const el = halBodyRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = halBody.slice(start, end);
+    const next = halBody.slice(0, start) + before + selected + after + halBody.slice(end);
+    setHalBody(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.selectionStart = start + before.length;
+      el.selectionEnd = start + before.length + selected.length;
+    });
+  }
+
+  function halHandleBodyKeyDown(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key === "b") {
+      e.preventDefault();
+      halInsertMarkdown("**", "**");
+    } else if (e.key === "i") {
+      e.preventDefault();
+      halInsertMarkdown("_", "_");
+    } else if (e.key === "k") {
+      e.preventDefault();
+      halInsertMarkdown("[", "](url)");
+    }
+  }
+
   if (!halUser) {
     return (
       <main class="hal-notes-app">
@@ -144,10 +250,7 @@ function HalNotesApp() {
                 <span class="hal-dot" style={{ background: cat.color }} />
                 {cat.name}
               </span>
-              <button
-                class="hal-link"
-                onClick={() => halHandleDeleteCategory(cat.id)}
-              >
+              <button class="hal-link" onClick={() => halHandleDeleteCategory(cat.id)}>
                 ×
               </button>
             </li>
@@ -208,12 +311,80 @@ function HalNotesApp() {
             </option>
           ))}
         </select>
-        <textarea
-          class="hal-input hal-note-body"
-          placeholder="Write in markdown…"
-          value={halBody}
-          onInput={(e) => setHalBody((e.target as HTMLTextAreaElement).value)}
-        />
+
+        <div class="hal-toolbar">
+          <button class="hal-toolbar-btn" title="Bold (Ctrl+B)" onClick={() => halInsertMarkdown("**", "**")}>
+            B
+          </button>
+          <button class="hal-toolbar-btn" title="Italic (Ctrl+I)" onClick={() => halInsertMarkdown("_", "_")}>
+            i
+          </button>
+          <button class="hal-toolbar-btn" title="Link (Ctrl+K)" onClick={() => halInsertMarkdown("[", "](url)")}>
+            Lk
+          </button>
+          <button class="hal-toolbar-btn" title="Bulleted list" onClick={() => halInsertMarkdown("- ", "")}>
+            •
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Attach a file"
+            onClick={() => halFileInputRef.current?.click()}
+          >
+            +
+          </button>
+          <input
+            ref={halFileInputRef}
+            type="file"
+            class="hal-file-input"
+            onChange={halHandleFilePick}
+          />
+          <button
+            class={`hal-toolbar-btn hal-toolbar-btn-right ${halViewMode === "preview" ? "hal-active" : ""}`}
+            onClick={() => setHalViewMode(halViewMode === "edit" ? "preview" : "edit")}
+          >
+            {halViewMode === "edit" ? "Preview" : "Edit"}
+          </button>
+        </div>
+
+        {halViewMode === "edit" ? (
+          <textarea
+            ref={halBodyRef}
+            class="hal-input hal-note-body"
+            placeholder="Write in markdown… paste an image directly to attach it"
+            value={halBody}
+            onInput={(e) => setHalBody((e.target as HTMLTextAreaElement).value)}
+            onPaste={halHandleBodyPaste}
+            onKeyDown={halHandleBodyKeyDown}
+          />
+        ) : (
+          <div
+            class="hal-note-preview"
+            dangerouslySetInnerHTML={{ __html: marked.parse(halBody) as string }}
+          />
+        )}
+
+        {halUploading && <p class="hal-uploading">Uploading attachment…</p>}
+
+        {halAttachments.length > 0 && (
+          <ul class="hal-attachment-list">
+            {halAttachments.map((att) => (
+              <li key={att.driveFileId} class="hal-attachment-item">
+                {halThumbs[att.driveFileId] ? (
+                  <img class="hal-attachment-thumb" src={halThumbs[att.driveFileId]} />
+                ) : (
+                  <span class="hal-attachment-icon">[file]</span>
+                )}
+                <span class="hal-attachment-name" onClick={() => halDownloadAttachment(att)}>
+                  {att.name}
+                </span>
+                <button class="hal-link" onClick={() => halRemoveAttachment(att.driveFileId)}>
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         <div class="hal-editor-actions">
           <button class="hal-button" onClick={halHandleSave}>
             {halSelectedNoteId ? "Save changes" : "Create note"}

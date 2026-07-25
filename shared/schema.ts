@@ -25,13 +25,18 @@ export interface HalClipItem {
   originDevice: HalDevice;
 }
 
+export interface HalAttachment {
+  driveFileId: string;
+  name: string;
+}
+
 // longer-form notes, separate from the transient clipboard feed
 export interface HalNote {
   id: string;
   title: string;
   body: string;                 // markdown
   categoryId?: string;
-  attachments: string[];        // driveFileIds
+  attachments: HalAttachment[];
   updatedAt: HalTimestamp;
 }
 

@@ -30,13 +30,18 @@ interface HalClipItem {
   originDevice: "android" | "browser"
 }
 
+interface HalAttachment {
+  driveFileId: string
+  name: string
+}
+
 // longer-form notes, separate from the transient clipboard feed
 interface HalNote {
   id: string
   title: string
   body: string                  // markdown
   categoryId?: string
-  attachments: string[]         // driveFileIds
+  attachments: HalAttachment[]
   updatedAt: Timestamp
 }
 
