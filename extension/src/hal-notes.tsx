@@ -1,7 +1,11 @@
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { marked } from "marked";
+import { Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
+import { Markdown } from "tiptap-markdown";
 import { halAuth } from "./hal-firebase";
 import { halGetValidAccessToken } from "./hal-auth";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
@@ -18,6 +22,7 @@ import type { HalNote, HalCategory, HalAttachment } from "@shared/schema";
 
 const HAL_CATEGORY_COLORS = ["#d99b47", "#6cbcc4", "#5fcf9a", "#e5645c", "#9a9cb3"];
 const HAL_IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const HAL_PREVIEWABLE_EXT = /\.(png|jpe?g|gif|webp|bmp|pdf)$/i;
 
 function HalNotesApp() {
   const [halUser, setHalUser] = useState<User | null>(null);
@@ -32,12 +37,14 @@ function HalNotesApp() {
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
   const [halSearch, setHalSearch] = useState("");
   const [halError, setHalError] = useState<string | null>(null);
-  const [halViewMode, setHalViewMode] = useState<"edit" | "preview">("edit");
   const [halUploading, setHalUploading] = useState(false);
   const [halThumbs, setHalThumbs] = useState<Record<string, string>>({});
 
-  const halBodyRef = useRef<HTMLTextAreaElement>(null);
+  const halEditorContainerRef = useRef<HTMLDivElement>(null);
+  const halEditorRef = useRef<Editor | null>(null);
   const halFileInputRef = useRef<HTMLInputElement>(null);
+  // avoids a stale closure inside the Tiptap paste handler, which is only ever registered once
+  const halUploadAttachmentRef = useRef<(blob: Blob, name: string) => void>(() => {});
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -55,6 +62,49 @@ function HalNotesApp() {
     };
   }, [halUser]);
 
+  // Mounted once — Tiptap manages its own DOM independently of Preact from
+  // here on. Real-time WYSIWYG: typing bold shows bold immediately, and
+  // pasting rich text (e.g. from Word) keeps its bold/italic/heading/list
+  // structure, since ProseMirror parses the HTML Word puts on the clipboard.
+  // Colors/fonts don't survive — no editor's schema here supports them, same
+  // as pasting into Notion or Google Docs.
+  useEffect(() => {
+    if (!halEditorContainerRef.current) return;
+    const editor = new Editor({
+      element: halEditorContainerRef.current,
+      extensions: [
+        StarterKit,
+        Underline,
+        Link.configure({ openOnClick: false }),
+        Markdown.configure({ html: false }),
+      ],
+      content: "",
+      onUpdate: ({ editor }) => {
+        setHalBody((editor.storage as any).markdown.getMarkdown());
+      },
+      editorProps: {
+        handlePaste: (_view, event) => {
+          const items = event.clipboardData?.items;
+          if (!items) return false;
+          for (const item of Array.from(items)) {
+            if (item.type.startsWith("image/")) {
+              event.preventDefault();
+              const blob = item.getAsFile();
+              if (blob) {
+                const ext = item.type.split("/")[1] ?? "png";
+                halUploadAttachmentRef.current(blob, `pasted-${Date.now()}.${ext}`);
+              }
+              return true;
+            }
+          }
+          return false; // let Tiptap handle text/HTML paste normally
+        },
+      },
+    });
+    halEditorRef.current = editor;
+    return () => editor.destroy();
+  }, []);
+
   const halVisibleNotes = halNotes
     .filter((n) => halActiveCategoryId === "all" || n.categoryId === halActiveCategoryId)
     .filter((n) => {
@@ -69,7 +119,7 @@ function HalNotesApp() {
     setHalBody(note?.body ?? "");
     setHalNoteCategoryId(note?.categoryId ?? "");
     setHalAttachments(note?.attachments ?? []);
-    setHalViewMode("edit");
+    halEditorRef.current?.commands.setContent(note?.body ?? "", false);
   }
 
   async function halHandleSave() {
@@ -145,6 +195,7 @@ function HalNotesApp() {
       setHalUploading(false);
     }
   }
+  halUploadAttachmentRef.current = halUploadAttachment;
 
   function halHandleFilePick(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
@@ -152,72 +203,39 @@ function HalNotesApp() {
     (e.target as HTMLInputElement).value = "";
   }
 
-  function halHandleBodyPaste(e: ClipboardEvent) {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith("image/")) {
-        e.preventDefault();
-        const blob = item.getAsFile();
-        if (blob) {
-          const ext = item.type.split("/")[1] ?? "png";
-          halUploadAttachment(blob, `pasted-${Date.now()}.${ext}`);
-        }
-        return;
-      }
-    }
-    // otherwise let plain text paste through normally
-  }
-
   function halRemoveAttachment(driveFileId: string) {
     setHalAttachments((prev) => prev.filter((a) => a.driveFileId !== driveFileId));
   }
 
-  async function halDownloadAttachment(att: HalAttachment) {
+  // Images and PDFs open in a new tab for the browser's own native preview.
+  // Everything else downloads — there's no in-app viewer for arbitrary files.
+  async function halOpenAttachment(att: HalAttachment) {
     setHalError(null);
     try {
       const accessToken = await halGetValidAccessToken();
       const blob = await halFetchDriveFileBlob(accessToken, att.driveFileId);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = att.name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (HAL_PREVIEWABLE_EXT.test(att.name)) {
+        window.open(url, "_blank");
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = att.name;
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       setHalError((err as Error).message);
     }
   }
 
-  // ---- Markdown toolbar ----
+  // ---- Toolbar ----
 
-  function halInsertMarkdown(before: string, after: string) {
-    const el = halBodyRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = halBody.slice(start, end);
-    const next = halBody.slice(0, start) + before + selected + after + halBody.slice(end);
-    setHalBody(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.selectionStart = start + before.length;
-      el.selectionEnd = start + before.length + selected.length;
-    });
-  }
-
-  function halHandleBodyKeyDown(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    if (e.key === "b") {
-      e.preventDefault();
-      halInsertMarkdown("**", "**");
-    } else if (e.key === "i") {
-      e.preventDefault();
-      halInsertMarkdown("_", "_");
-    } else if (e.key === "k") {
-      e.preventDefault();
-      halInsertMarkdown("[", "](url)");
-    }
+  function halToolbar(action: () => void) {
+    return () => {
+      action();
+      halEditorRef.current?.chain().focus();
+    };
   }
 
   if (!halUser) {
@@ -313,17 +331,59 @@ function HalNotesApp() {
         </select>
 
         <div class="hal-toolbar">
-          <button class="hal-toolbar-btn" title="Bold (Ctrl+B)" onClick={() => halInsertMarkdown("**", "**")}>
+          <button
+            class="hal-toolbar-btn"
+            title="Bold (Ctrl+B)"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().toggleBold().run())}
+          >
             B
           </button>
-          <button class="hal-toolbar-btn" title="Italic (Ctrl+I)" onClick={() => halInsertMarkdown("_", "_")}>
+          <button
+            class="hal-toolbar-btn"
+            title="Italic (Ctrl+I)"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().toggleItalic().run())}
+          >
             i
           </button>
-          <button class="hal-toolbar-btn" title="Link (Ctrl+K)" onClick={() => halInsertMarkdown("[", "](url)")}>
+          <button
+            class="hal-toolbar-btn"
+            title="Underline (Ctrl+U)"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().toggleUnderline().run())}
+          >
+            U
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Heading"
+            onClick={halToolbar(() =>
+              halEditorRef.current?.chain().focus().toggleHeading({ level: 2 }).run(),
+            )}
+          >
+            H
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Link"
+            onClick={halToolbar(() => {
+              const url = window.prompt("Link URL");
+              if (url) halEditorRef.current?.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+            })}
+          >
             Lk
           </button>
-          <button class="hal-toolbar-btn" title="Bulleted list" onClick={() => halInsertMarkdown("- ", "")}>
+          <button
+            class="hal-toolbar-btn"
+            title="Bulleted list"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().toggleBulletList().run())}
+          >
             •
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Numbered list"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().toggleOrderedList().run())}
+          >
+            1.
           </button>
           <button
             class="hal-toolbar-btn"
@@ -338,30 +398,9 @@ function HalNotesApp() {
             class="hal-file-input"
             onChange={halHandleFilePick}
           />
-          <button
-            class={`hal-toolbar-btn hal-toolbar-btn-right ${halViewMode === "preview" ? "hal-active" : ""}`}
-            onClick={() => setHalViewMode(halViewMode === "edit" ? "preview" : "edit")}
-          >
-            {halViewMode === "edit" ? "Preview" : "Edit"}
-          </button>
         </div>
 
-        {halViewMode === "edit" ? (
-          <textarea
-            ref={halBodyRef}
-            class="hal-input hal-note-body"
-            placeholder="Write in markdown… paste an image directly to attach it"
-            value={halBody}
-            onInput={(e) => setHalBody((e.target as HTMLTextAreaElement).value)}
-            onPaste={halHandleBodyPaste}
-            onKeyDown={halHandleBodyKeyDown}
-          />
-        ) : (
-          <div
-            class="hal-note-preview"
-            dangerouslySetInnerHTML={{ __html: marked.parse(halBody) as string }}
-          />
-        )}
+        <div ref={halEditorContainerRef} class="hal-note-body" />
 
         {halUploading && <p class="hal-uploading">Uploading attachment…</p>}
 
@@ -374,7 +413,7 @@ function HalNotesApp() {
                 ) : (
                   <span class="hal-attachment-icon">[file]</span>
                 )}
-                <span class="hal-attachment-name" onClick={() => halDownloadAttachment(att)}>
+                <span class="hal-attachment-name" onClick={() => halOpenAttachment(att)}>
                   {att.name}
                 </span>
                 <button class="hal-link" onClick={() => halRemoveAttachment(att.driveFileId)}>

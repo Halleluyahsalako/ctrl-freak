@@ -117,7 +117,46 @@
       }
       .hal-note-body {
         min-height: 320px;
-        resize: vertical;
+        background: #0d0e16;
+        border: 1px solid #2a2c3d;
+        border-radius: 4px;
+        padding: 0.75rem;
+      }
+      .hal-note-body .ProseMirror {
+        outline: none;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.9rem;
+        line-height: 1.6;
+        min-height: 300px;
+      }
+      .hal-note-body .ProseMirror p {
+        margin: 0 0 0.6em;
+      }
+      .hal-note-body .ProseMirror h1,
+      .hal-note-body .ProseMirror h2,
+      .hal-note-body .ProseMirror h3 {
+        color: #d99b47;
+        margin: 0.6em 0 0.4em;
+      }
+      .hal-note-body .ProseMirror ul,
+      .hal-note-body .ProseMirror ol {
+        padding-left: 1.4em;
+        margin: 0 0 0.6em;
+      }
+      .hal-note-body .ProseMirror a {
+        color: #6cbcc4;
+      }
+      .hal-note-body .ProseMirror code {
+        background: #191b27;
+        padding: 0.1em 0.3em;
+        border-radius: 3px;
+        font-family: ui-monospace, monospace;
+      }
+      .hal-note-body .ProseMirror blockquote {
+        border-left: 3px solid #2a2c3d;
+        margin: 0 0 0.6em;
+        padding-left: 0.8em;
+        color: #9a9cb3;
       }
       .hal-editor-actions {
         display: flex;
@@ -143,27 +182,8 @@
         border-color: #d99b47;
         color: #d99b47;
       }
-      .hal-toolbar-btn-right {
-        margin-left: auto;
-        width: auto;
-        padding: 0 0.6rem;
-      }
       .hal-file-input {
         display: none;
-      }
-      .hal-note-preview {
-        min-height: 320px;
-        background: #0d0e16;
-        border: 1px solid #2a2c3d;
-        border-radius: 4px;
-        padding: 0.75rem;
-        font-family: ui-sans-serif, system-ui, sans-serif;
-        font-size: 0.9rem;
-        line-height: 1.6;
-        overflow-wrap: break-word;
-      }
-      .hal-note-preview :first-child {
-        margin-top: 0;
       }
       .hal-uploading {
         color: #9a9cb3;
