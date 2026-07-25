@@ -80,7 +80,7 @@ function HalNotesApp() {
   const [halDragOver, setHalDragOver] = useState(false);
 
   const [halOpenMenu, setHalOpenMenu] = useState<
-    "blockType" | "fontSize" | "color" | "overflow" | null
+    "category" | "blockType" | "fontSize" | "color" | "overflow" | null
   >(null);
   const [halShowDeleteConfirm, setHalShowDeleteConfirm] = useState(false);
   const [halNoteSelectMode, setHalNoteSelectMode] = useState(false);
@@ -96,6 +96,15 @@ function HalNotesApp() {
   const halUploadAttachmentRef = useRef<(blob: Blob, name: string) => void>(() => {});
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
+
+  useEffect(() => {
+    if (!halOpenMenu) return;
+    function halHandleOutsideClick(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest(".hal-menu-anchor")) setHalOpenMenu(null);
+    }
+    document.addEventListener("mousedown", halHandleOutsideClick);
+    return () => document.removeEventListener("mousedown", halHandleOutsideClick);
+  }, [halOpenMenu]);
 
   useEffect(() => {
     if (!halUser) {
@@ -522,7 +531,7 @@ function HalNotesApp() {
           </div>
         )}
 
-        {!halHasSelection ? (
+        {!halHasSelection && (
           <div class="hal-empty-editor">
             {halNotes.length === 0 ? (
               <>
@@ -540,8 +549,18 @@ function HalNotesApp() {
               </>
             )}
           </div>
-        ) : (
-          <section class="hal-editor-pane">
+        )}
+        {
+          // Always mounted (just hidden) rather than conditionally rendered —
+          // the Tiptap editor attaches to hal-editor-body in a mount effect
+          // keyed on [halUser], which runs once right after sign-in. If this
+          // section were conditionally rendered on halHasSelection, that div
+          // wouldn't exist in the DOM yet on first run, the effect would bail
+          // out (element null), and never retry — leaving the editor
+          // permanently unmounted, title/category still editable via plain
+          // inputs but the rich-text body dead.
+        }
+        <section class="hal-editor-pane" style={halHasSelection ? undefined : { display: "none" }}>
             <input
               class="hal-title-input"
               placeholder="Untitled note"
@@ -553,7 +572,7 @@ function HalNotesApp() {
               <div class="hal-menu-anchor">
                 <button
                   class="hal-chip hal-selected"
-                  onClick={() => setHalOpenMenu(halOpenMenu === "blockType" ? null : "blockType")}
+                  onClick={() => setHalOpenMenu(halOpenMenu === "category" ? null : "category")}
                   style={{ borderColor: "var(--rule)", color: "var(--ink-muted)" }}
                 >
                   <span
@@ -562,7 +581,7 @@ function HalNotesApp() {
                   />
                   {halCategories.find((c) => c.id === halNoteCategoryId)?.name ?? "No category"}
                 </button>
-                {halOpenMenu === "blockType" && (
+                {halOpenMenu === "category" && (
                   <div class="hal-menu">
                     <button class="hal-menu-item" onClick={() => { setHalNoteCategoryId(""); setHalOpenMenu(null); }}>
                       No category
@@ -825,7 +844,6 @@ function HalNotesApp() {
               </button>
             </div>
           </section>
-        )}
       </div>
 
       {halShowDeleteConfirm && (
