@@ -382,6 +382,65 @@
         color: var(--danger);
       }
 
+      /* ---- category flyout ---- */
+      .hal-cat-row-wrap {
+        position: relative;
+      }
+      .hal-category-flyout {
+        position: absolute;
+        left: 100%;
+        top: 0;
+        margin-left: 8px;
+        width: 240px;
+        max-height: 320px;
+        overflow-y: auto;
+        background: var(--surface);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-float);
+        padding: var(--sp-8);
+        z-index: 30;
+      }
+      .hal-flyout-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 6px 8px;
+        border-bottom: 1px solid var(--rule);
+        margin-bottom: 6px;
+      }
+      .hal-flyout-title {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .hal-flyout-count {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-faint);
+      }
+      .hal-flyout-empty {
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--ink-faint);
+        text-align: center;
+        padding: var(--sp-11) var(--sp-6);
+        margin: 0;
+      }
+      .hal-flyout-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background 120ms var(--ease);
+      }
+      .hal-flyout-row:hover {
+        background: var(--surface-raised);
+      }
+
       /* ---- editor pane ---- */
       .hal-editor-pane {
         flex: 1;
