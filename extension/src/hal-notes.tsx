@@ -17,13 +17,14 @@ import {
   halCreateNote,
   halUpdateNote,
   halDeleteNote,
+  halDeleteNotes,
   halSubscribeToNotes,
   halCreateCategory,
   halDeleteCategory,
   halSubscribeToCategories,
 } from "./hal-notes-sync";
 import { useHalToast, HalToast } from "./hal-toast";
-import { HalIconPin, HalIconPaperclip } from "./hal-icons";
+import { HalIconPin, HalIconPaperclip, HalIconCheck } from "./hal-icons";
 import type { HalNote, HalCategory, HalAttachment } from "@shared/schema";
 
 // docs/ctrl-freak-extension-ui-spec.md §3
@@ -82,6 +83,9 @@ function HalNotesApp() {
     "blockType" | "fontSize" | "color" | "overflow" | null
   >(null);
   const [halShowDeleteConfirm, setHalShowDeleteConfirm] = useState(false);
+  const [halNoteSelectMode, setHalNoteSelectMode] = useState(false);
+  const [halSelectedNoteIds, setHalSelectedNoteIds] = useState<Set<string>>(new Set());
+  const [halShowBulkDeleteConfirm, setHalShowBulkDeleteConfirm] = useState(false);
   const [, halForceToolbarTick] = useState(0);
 
   const { toast, show: halToast } = useHalToast();
@@ -207,6 +211,44 @@ function HalNotesApp() {
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalShowDeleteConfirm(false);
+    }
+  }
+
+  function halToggleNoteSelectMode() {
+    setHalNoteSelectMode((on) => !on);
+    setHalSelectedNoteIds(new Set());
+  }
+
+  function halToggleNoteSelected(noteId: string) {
+    setHalSelectedNoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(noteId)) next.delete(noteId);
+      else next.add(noteId);
+      return next;
+    });
+  }
+
+  function halHandleRecentRowClick(note: HalNote) {
+    if (halNoteSelectMode) halToggleNoteSelected(note.id);
+    else halSelectNote(note);
+  }
+
+  async function halHandleBulkDelete() {
+    if (!halUser) return;
+    const ids = [...halSelectedNoteIds];
+    try {
+      await halDeleteNotes(halUser.uid, ids);
+      if (halSelectedNoteId && ids.includes(halSelectedNoteId)) {
+        halSelectNote(null);
+        setHalHasSelection(false);
+      }
+      halToast(`Deleted ${ids.length} note${ids.length === 1 ? "" : "s"}`, "neutral");
+      setHalNoteSelectMode(false);
+      setHalSelectedNoteIds(new Set());
+    } catch {
+      halToast("Couldn't sync — check your connection", "error");
+    } finally {
+      setHalShowBulkDeleteConfirm(false);
     }
   }
 
@@ -412,13 +454,44 @@ function HalNotesApp() {
           </div>
 
           <div class="hal-recent-block">
-            <p class="hal-eyebrow">Recent</p>
+            <div class="hal-eyebrow-row">
+              <p class="hal-eyebrow">Recent</p>
+              <button
+                class="hal-text-btn"
+                onClick={halToggleNoteSelectMode}
+                disabled={halOrderedNotes.length === 0}
+              >
+                {halNoteSelectMode ? "Cancel" : "Select"}
+              </button>
+            </div>
+
+            {halNoteSelectMode && (
+              <div class="hal-select-bar">
+                <span>{halSelectedNoteIds.size} selected</span>
+                <button
+                  class="hal-text-btn hal-text-btn-danger"
+                  disabled={halSelectedNoteIds.size === 0}
+                  onClick={() => setHalShowBulkDeleteConfirm(true)}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+
             {halOrderedNotes.map((note) => (
               <div
                 key={note.id}
-                class={`hal-recent-row ${halSelectedNoteId === note.id ? "hal-selected" : ""}`}
-                onClick={() => halSelectNote(note)}
+                class={`hal-recent-row ${halSelectedNoteId === note.id && !halNoteSelectMode ? "hal-selected" : ""}`}
+                onClick={() => halHandleRecentRowClick(note)}
               >
+                {halNoteSelectMode && (
+                  <span
+                    class={`hal-checkbox ${halSelectedNoteIds.has(note.id) ? "hal-checked" : ""}`}
+                    aria-label={halSelectedNoteIds.has(note.id) ? "Selected" : "Not selected"}
+                  >
+                    {halSelectedNoteIds.has(note.id) && <HalIconCheck size={9} />}
+                  </span>
+                )}
                 <span class="hal-dot" style={{ background: halCategoryColor(halCategories, note.categoryId) }} />
                 <span class="hal-recent-title">{note.title || "Untitled note"}</span>
                 {note.pinned && <span style={{ color: "var(--accent)" }}><HalIconPin size={11} /></span>}
@@ -426,6 +499,28 @@ function HalNotesApp() {
             ))}
           </div>
         </aside>
+
+        {halShowBulkDeleteConfirm && (
+          <div class="hal-dialog-scrim" onClick={() => setHalShowBulkDeleteConfirm(false)}>
+            <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+              <p class="hal-dialog-title">
+                Delete {halSelectedNoteIds.size} note{halSelectedNoteIds.size === 1 ? "" : "s"}?
+              </p>
+              <p class="hal-dialog-body">This can't be undone.</p>
+              <div class="hal-dialog-actions">
+                <button
+                  class="hal-dialog-btn hal-dialog-btn-cancel"
+                  onClick={() => setHalShowBulkDeleteConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button class="hal-dialog-btn hal-dialog-btn-danger" onClick={halHandleBulkDelete}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {!halHasSelection ? (
           <div class="hal-empty-editor">
