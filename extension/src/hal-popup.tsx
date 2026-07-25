@@ -79,7 +79,11 @@ function HalPopup() {
   async function halHandleTogglePin(e: Event, clip: HalClipItem) {
     e.stopPropagation();
     if (!halUser) return;
-    await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
+    try {
+      await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
+    } catch (err) {
+      setHalError((err as Error).message);
+    }
   }
 
   async function halHandlePaste(clip: HalClipItem) {
@@ -101,6 +105,7 @@ function HalPopup() {
     return (
       <main class="hal-popup">
         <h1 class="hal-title">Ctrl+Freak</h1>
+        <p class="hal-subtitle">clipboard + notes, synced to your phone</p>
         <button class="hal-button" onClick={halHandleSignIn}>
           Sign in with Google
         </button>
@@ -112,7 +117,10 @@ function HalPopup() {
   return (
     <main class="hal-popup">
       <div class="hal-header">
-        <h1 class="hal-title">Ctrl+Freak</h1>
+        <div>
+          <h1 class="hal-title">Ctrl+Freak</h1>
+          <p class="hal-subtitle">{halUser.email}</p>
+        </div>
         <div>
           <button
             class="hal-link"
@@ -158,6 +166,10 @@ function HalPopup() {
             ))}
         </ul>
       )}
+
+      <p class="hal-footer">
+        <kbd>Ctrl+Shift+Y</kbd> opens this popup · click a clip to copy it
+      </p>
     </main>
   );
 }

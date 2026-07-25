@@ -5,7 +5,10 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
+import TextAlign from "@tiptap/extension-text-align";
+import TextStyle from "@tiptap/extension-text-style";
 import { Markdown } from "tiptap-markdown";
+import { HalFontSize } from "./hal-font-size";
 import { halAuth } from "./hal-firebase";
 import { halGetValidAccessToken } from "./hal-auth";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
@@ -39,6 +42,7 @@ function HalNotesApp() {
   const [halError, setHalError] = useState<string | null>(null);
   const [halUploading, setHalUploading] = useState(false);
   const [halThumbs, setHalThumbs] = useState<Record<string, string>>({});
+  const [halShowShortcuts, setHalShowShortcuts] = useState(false);
 
   const halEditorContainerRef = useRef<HTMLDivElement>(null);
   const halEditorRef = useRef<Editor | null>(null);
@@ -76,6 +80,9 @@ function HalNotesApp() {
         StarterKit,
         Underline,
         Link.configure({ openOnClick: false }),
+        TextStyle,
+        HalFontSize,
+        TextAlign.configure({ types: ["heading", "paragraph"] }),
         Markdown.configure({ html: false }),
       ],
       content: "",
@@ -385,6 +392,52 @@ function HalNotesApp() {
           >
             1.
           </button>
+
+          <span class="hal-toolbar-divider" />
+
+          <button
+            class="hal-toolbar-btn"
+            title="Align left"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().setTextAlign("left").run())}
+          >
+            ⟸
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Align center"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().setTextAlign("center").run())}
+          >
+            ⟺
+          </button>
+          <button
+            class="hal-toolbar-btn"
+            title="Align right"
+            onClick={halToolbar(() => halEditorRef.current?.chain().focus().setTextAlign("right").run())}
+          >
+            ⟹
+          </button>
+
+          <select
+            class="hal-toolbar-select"
+            title="Font size"
+            onChange={(e) => {
+              const size = (e.target as HTMLSelectElement).value;
+              if (size === "default") {
+                halEditorRef.current?.chain().focus().unsetFontSize().run();
+              } else {
+                halEditorRef.current?.chain().focus().setFontSize(size).run();
+              }
+            }}
+          >
+            <option value="default">Size</option>
+            <option value="12px">Small</option>
+            <option value="14px">Normal</option>
+            <option value="18px">Large</option>
+            <option value="24px">Huge</option>
+          </select>
+
+          <span class="hal-toolbar-divider" />
+
           <button
             class="hal-toolbar-btn"
             title="Attach a file"
@@ -398,7 +451,26 @@ function HalNotesApp() {
             class="hal-file-input"
             onChange={halHandleFilePick}
           />
+
+          <button
+            class="hal-toolbar-btn hal-toolbar-btn-right"
+            title="Keyboard shortcuts"
+            onClick={() => setHalShowShortcuts((v) => !v)}
+          >
+            ?
+          </button>
         </div>
+
+        {halShowShortcuts && (
+          <div class="hal-shortcuts">
+            <strong>Editor:</strong> Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+K link
+            <br />
+            <strong>Extension:</strong> Ctrl+Shift+Y (Cmd+Shift+Y on Mac) opens the popup from
+            anywhere · click a clip to copy it · click <em>*</em> to pin
+          </div>
+        )}
+
+        {halError && <p class="hal-error">{halError}</p>}
 
         <div ref={halEditorContainerRef} class="hal-note-body" />
 

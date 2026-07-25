@@ -4,75 +4,136 @@
     <meta charset="UTF-8" />
     <title>Ctrl+Freak</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
+      :root {
+        --hal-bg: #0e0f17;
+        --hal-surface: #171925;
+        --hal-surface-raised: #1e2130;
+        --hal-inset: #0a0b12;
+        --hal-ink: #eceaf3;
+        --hal-ink-muted: #9a9cb3;
+        --hal-ink-faint: #6b6d84;
+        --hal-rule: #2a2c3d;
+        --hal-accent: #e0a75e;
+        --hal-accent-ink: #12131c;
+        --hal-cyan: #74c7d4;
+        --hal-danger: #ea6f67;
+        --hal-radius-sm: 6px;
+        --hal-radius: 10px;
+        --hal-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
       body {
         margin: 0;
-        width: 320px;
-        min-height: 200px;
-        background: #12131c;
-        color: #e9e9f0;
-        font-family: ui-monospace, "IBM Plex Mono", monospace;
+        width: 340px;
+        min-height: 220px;
+        background:
+          radial-gradient(600px 300px at 20% -20%, rgba(224, 167, 94, 0.08), transparent),
+          var(--hal-bg);
+        color: var(--hal-ink);
+        font-family: ui-sans-serif, "IBM Plex Sans", system-ui, sans-serif;
       }
       .hal-popup {
-        padding: 1rem;
+        padding: 1.1rem;
       }
       .hal-title {
-        font-size: 1rem;
-        margin: 0 0 0.75rem;
-        color: #d99b47;
+        font-family: ui-monospace, "IBM Plex Mono", monospace;
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin: 0 0 0.15rem;
+        color: var(--hal-accent);
+        letter-spacing: -0.01em;
+      }
+      .hal-subtitle {
+        color: var(--hal-ink-faint);
+        font-size: 0.72rem;
+        margin: 0 0 0.9rem;
       }
       .hal-empty {
-        color: #9a9cb3;
+        color: var(--hal-ink-muted);
         font-size: 0.85rem;
+        text-align: center;
+        padding: 1.2rem 0;
       }
       .hal-header {
         display: flex;
         justify-content: space-between;
         align-items: baseline;
+        margin-bottom: 0.6rem;
       }
       .hal-button {
         width: 100%;
         margin: 0.5rem 0 0.75rem;
-        padding: 0.5rem;
-        background: #d99b47;
-        color: #12131c;
+        padding: 0.6rem;
+        background: var(--hal-accent);
+        color: var(--hal-accent-ink);
         border: none;
-        border-radius: 4px;
+        border-radius: var(--hal-radius-sm);
         font-family: inherit;
+        font-weight: 600;
         font-size: 0.85rem;
         cursor: pointer;
+        transition: filter 0.12s ease, transform 0.05s ease;
+      }
+      .hal-button:hover:not(:disabled) {
+        filter: brightness(1.08);
+      }
+      .hal-button:active:not(:disabled) {
+        transform: translateY(1px);
       }
       .hal-button:disabled {
-        opacity: 0.6;
+        opacity: 0.55;
         cursor: default;
       }
       .hal-link {
         background: none;
         border: none;
-        color: #6cbcc4;
+        color: var(--hal-cyan);
         font-family: inherit;
         font-size: 0.75rem;
         cursor: pointer;
+        padding: 0.15rem 0.35rem;
+        border-radius: 4px;
+        transition: background 0.12s ease;
+      }
+      .hal-link:hover {
+        background: var(--hal-surface-raised);
       }
       .hal-error {
-        color: #e5645c;
-        font-size: 0.8rem;
+        color: var(--hal-danger);
+        background: rgba(234, 111, 103, 0.1);
+        border: 1px solid rgba(234, 111, 103, 0.3);
+        border-radius: var(--hal-radius-sm);
+        padding: 0.5rem 0.65rem;
+        font-size: 0.78rem;
+        margin: 0 0 0.6rem;
       }
       .hal-clip-list {
         list-style: none;
         margin: 0;
         padding: 0;
+        background: var(--hal-surface);
+        border: 1px solid var(--hal-rule);
+        border-radius: var(--hal-radius);
+        overflow: hidden;
+        box-shadow: var(--hal-shadow);
       }
       .hal-clip-item {
         display: flex;
         align-items: center;
-        gap: 0.4rem;
-        padding: 0.5rem;
-        border-bottom: 1px solid #2a2c3d;
+        gap: 0.5rem;
+        padding: 0.55rem 0.65rem;
+        border-bottom: 1px solid var(--hal-rule);
         font-size: 0.8rem;
         cursor: pointer;
+        transition: background 0.12s ease;
+      }
+      .hal-clip-item:last-child {
+        border-bottom: none;
       }
       .hal-clip-item:hover {
-        background: #191b27;
+        background: var(--hal-surface-raised);
       }
       .hal-clip-text {
         overflow: hidden;
@@ -81,18 +142,34 @@
       }
       .hal-pin {
         background: none;
-        border: 1px solid #2a2c3d;
-        color: #6b6d84;
-        border-radius: 3px;
+        border: 1px solid var(--hal-rule);
+        color: var(--hal-ink-faint);
+        border-radius: 4px;
         width: 20px;
         height: 20px;
         line-height: 1;
         flex-shrink: 0;
         cursor: pointer;
+        transition: color 0.12s ease, border-color 0.12s ease;
       }
       .hal-pinned {
-        color: #d99b47;
-        border-color: #d99b47;
+        color: var(--hal-accent);
+        border-color: var(--hal-accent);
+      }
+      .hal-footer {
+        margin-top: 0.85rem;
+        padding-top: 0.7rem;
+        border-top: 1px solid var(--hal-rule);
+        color: var(--hal-ink-faint);
+        font-size: 0.68rem;
+        text-align: center;
+      }
+      .hal-footer kbd {
+        background: var(--hal-inset);
+        border: 1px solid var(--hal-rule);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+        font-family: ui-monospace, monospace;
       }
     </style>
   </head>
