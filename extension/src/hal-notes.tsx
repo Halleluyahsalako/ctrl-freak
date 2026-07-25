@@ -204,7 +204,8 @@ function HalNotesApp() {
         halSelectNote(null);
       }
       halToast("Saved", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -216,7 +217,8 @@ function HalNotesApp() {
       halSelectNote(null);
       setHalHasSelection(false);
       halToast("Note deleted", "neutral");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalShowDeleteConfirm(false);
@@ -254,7 +256,8 @@ function HalNotesApp() {
       halToast(`Deleted ${ids.length} note${ids.length === 1 ? "" : "s"}`, "neutral");
       setHalNoteSelectMode(false);
       setHalSelectedNoteIds(new Set());
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalShowBulkDeleteConfirm(false);
@@ -272,7 +275,8 @@ function HalNotesApp() {
         pinned: false,
       });
       halToast("Saved", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
     setHalOpenMenu(null);
@@ -295,7 +299,8 @@ function HalNotesApp() {
     try {
       await halCreateCategory(halUser.uid, { name: halNewCategoryName.trim(), color });
       setHalNewCategoryName("");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -305,7 +310,8 @@ function HalNotesApp() {
     if (!halUser) return;
     try {
       await halDeleteCategory(halUser.uid, categoryId);
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -322,7 +328,8 @@ function HalNotesApp() {
         setHalThumbs((prev) => ({ ...prev, [driveFileId]: URL.createObjectURL(blob) }));
       }
       halToast("Attached", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Upload failed — try again", "error");
     } finally {
       setHalUploadingNames((prev) => {
@@ -365,7 +372,8 @@ function HalNotesApp() {
         a.click();
       }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }

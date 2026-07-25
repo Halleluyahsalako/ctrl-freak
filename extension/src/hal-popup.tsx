@@ -66,7 +66,8 @@ function HalPopup() {
     setHalSignInError(null);
     try {
       await halSignIn();
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       setHalSignInError("Couldn't sign in. Try again.");
     }
   }
@@ -104,7 +105,8 @@ function HalPopup() {
         });
       }
       halToast("Synced 1 item", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalBusy(false);
@@ -116,7 +118,8 @@ function HalPopup() {
     if (!halUser) return;
     try {
       await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -131,7 +134,8 @@ function HalPopup() {
         await halWriteClipboardText(clip.text);
       }
       halToast("Copied", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -161,7 +165,8 @@ function HalPopup() {
     try {
       await halClearAllClips(halUser.uid);
       halToast("Clipboard cleared", "success");
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
@@ -175,7 +180,8 @@ function HalPopup() {
       halToast(`Deleted ${ids.length} item${ids.length === 1 ? "" : "s"}`, "success");
       setHalSelectMode(false);
       setHalSelectedIds(new Set());
-    } catch {
+    } catch (err) {
+      console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     }
   }
