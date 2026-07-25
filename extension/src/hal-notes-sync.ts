@@ -4,6 +4,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
   onSnapshot,
   query,
   orderBy,
@@ -41,6 +42,19 @@ export async function halUpdateNote(
 
 export async function halDeleteNote(uid: string, noteId: string): Promise<void> {
   await deleteDoc(doc(halDb, "users", uid, "hal_notes", noteId));
+}
+
+// Firestore caps a single batch at 500 writes.
+const HAL_BATCH_CHUNK = 500;
+
+export async function halDeleteNotes(uid: string, noteIds: string[]): Promise<void> {
+  for (let i = 0; i < noteIds.length; i += HAL_BATCH_CHUNK) {
+    const batch = writeBatch(halDb);
+    for (const id of noteIds.slice(i, i + HAL_BATCH_CHUNK)) {
+      batch.delete(doc(halDb, "users", uid, "hal_notes", id));
+    }
+    await batch.commit();
+  }
 }
 
 export async function halSetNotePinned(

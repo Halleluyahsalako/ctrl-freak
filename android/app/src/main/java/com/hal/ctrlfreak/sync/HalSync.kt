@@ -1,5 +1,6 @@
 package com.hal.ctrlfreak.sync
 
+import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.Query
 import com.hal.ctrlfreak.auth.halDb
 import com.hal.ctrlfreak.data.HalCategory
@@ -31,6 +32,20 @@ suspend fun halSetClipPinned(uid: String, clipId: String, pinned: Boolean) {
     halClipItems(uid).document(clipId).update("pinned", pinned).await()
 }
 
+suspend fun halDeleteClip(uid: String, clipId: String) {
+    halClipItems(uid).document(clipId).delete().await()
+}
+
+suspend fun halDeleteClips(uid: String, clipIds: List<String>) {
+    halBatchDelete(halClipItems(uid), clipIds)
+}
+
+// Deletes every clip, not just the 50 the live listener keeps in memory.
+suspend fun halClearAllClips(uid: String) {
+    val snapshot = halClipItems(uid).get().await()
+    halBatchDelete(halClipItems(uid), snapshot.documents.map { it.id })
+}
+
 fun halSubscribeToClips(uid: String): Flow<List<HalClipItem>> = callbackFlow {
     val registration = halClipItems(uid)
         .orderBy("createdAt", Query.Direction.DESCENDING)
@@ -56,6 +71,10 @@ suspend fun halUpdateNote(uid: String, noteId: String, note: HalNote) {
 
 suspend fun halDeleteNote(uid: String, noteId: String) {
     halNotes(uid).document(noteId).delete().await()
+}
+
+suspend fun halDeleteNotes(uid: String, noteIds: List<String>) {
+    halBatchDelete(halNotes(uid), noteIds)
 }
 
 fun halSubscribeToNotes(uid: String): Flow<List<HalNote>> = callbackFlow {
@@ -86,4 +105,19 @@ fun halSubscribeToCategories(uid: String): Flow<List<HalCategory>> = callbackFlo
             trySend(snapshot.documents.map { it.toObject(HalCategory::class.java)!!.copy(id = it.id) })
         }
     awaitClose { registration.remove() }
+}
+
+// ---- Shared helpers ----
+
+// Firestore caps a single batch at 500 writes.
+private const val HAL_BATCH_CHUNK = 500
+
+private suspend fun halBatchDelete(collectionRef: CollectionReference, ids: List<String>) {
+    for (chunk in ids.chunked(HAL_BATCH_CHUNK)) {
+        val batch = halDb.batch()
+        for (id in chunk) {
+            batch.delete(collectionRef.document(id))
+        }
+        batch.commit().await()
+    }
 }
