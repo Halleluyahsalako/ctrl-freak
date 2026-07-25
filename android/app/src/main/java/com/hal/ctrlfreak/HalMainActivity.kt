@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -48,6 +49,7 @@ import com.hal.ctrlfreak.clipboard.halClipboardHasImage
 import com.hal.ctrlfreak.clipboard.halReadClipboardImageBytes
 import com.hal.ctrlfreak.clipboard.halReadClipboardText
 import com.hal.ctrlfreak.clipboard.halWriteClipboardText
+import com.hal.ctrlfreak.data.HalAttachment
 import com.hal.ctrlfreak.data.HalCategory
 import com.hal.ctrlfreak.data.HalClipItem
 import com.hal.ctrlfreak.data.HalClipKind
@@ -106,6 +108,16 @@ class HalMainActivity : ComponentActivity() {
     }
 }
 
+private fun halQueryDisplayName(context: Context, uri: Uri): String? {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0) return cursor.getString(index)
+        }
+    }
+    return null
+}
+
 private fun halIsOnline(context: Context): Boolean {
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val network = cm.activeNetwork ?: return false
@@ -137,6 +149,8 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     var editBody by remember { mutableStateOf("") }
     var editCategoryId by remember { mutableStateOf<String?>(null) }
     var editPinned by remember { mutableStateOf(false) }
+    var editAttachments by remember { mutableStateOf<List<HalAttachment>>(emptyList()) }
+    var uploadingAttachmentNames by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     var pendingShareIntent by remember { mutableStateOf<Intent?>(null) }
     // Reacts to sharedIntent changing (including a share arriving while the
@@ -201,6 +215,30 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
         return result == SnackbarResult.ActionPerformed
     }
 
+    val attachmentPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) {
+            val name = halQueryDisplayName(context, uri) ?: "attachment"
+            scope.launch {
+                uploadingAttachmentNames = uploadingAttachmentNames + name
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val token = halEnsureDriveAccessToken()
+                        val driveFileId = halUploadFileToDrive(token, bytes, mimeType, name)
+                        editAttachments = editAttachments + HalAttachment(driveFileId = driveFileId, name = name, size = bytes.size.toLong())
+                    }
+                } catch (e: Exception) {
+                    halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                } finally {
+                    uploadingAttachmentNames = uploadingAttachmentNames - name
+                }
+            }
+        }
+    }
+
     // §5 — share-sheet target. Waits for auth if needed, adds silently,
     // routes to Clipboard unless the user is mid-edit in Notes (then just
     // a snackbar with a "View" action instead of yanking them away).
@@ -245,6 +283,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
         editBody = note?.body ?: ""
         editCategoryId = note?.categoryId
         editPinned = note?.pinned ?: false
+        editAttachments = note?.attachments ?: emptyList()
     }
 
     if (halUser == null) {
@@ -331,14 +370,18 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                     pinned = editPinned,
                     onTogglePin = {
                         editPinned = !editPinned
-                        editingNoteId?.let { id -> scope.launch { halUpdateNote(uid, id, HalNote(title = editTitle, body = editBody, categoryId = editCategoryId, pinned = editPinned)) } }
+                        editingNoteId?.let { id -> scope.launch { halUpdateNote(uid, id, HalNote(title = editTitle, body = editBody, categoryId = editCategoryId, pinned = editPinned, attachments = editAttachments)) } }
                     },
+                    attachments = editAttachments,
+                    uploadingAttachmentNames = uploadingAttachmentNames,
+                    onAttachClick = { attachmentPickerLauncher.launch("*/*") },
+                    onRemoveAttachment = { driveFileId -> editAttachments = editAttachments.filterNot { it.driveFileId == driveFileId } },
                     isExisting = editingNoteId != null,
                     onBack = { editingNoteId = null; isCreatingNote = false },
                     onSave = {
                         if (editTitle.isNotBlank()) {
                             scope.launch {
-                                val note = HalNote(title = editTitle.trim(), body = editBody, categoryId = editCategoryId, pinned = editPinned)
+                                val note = HalNote(title = editTitle.trim(), body = editBody, categoryId = editCategoryId, pinned = editPinned, attachments = editAttachments)
                                 val id = editingNoteId
                                 try {
                                     if (id != null) halUpdateNote(uid, id, note) else halCreateNote(uid, note)
