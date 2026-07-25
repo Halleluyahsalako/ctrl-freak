@@ -4,22 +4,35 @@ package com.hal.ctrlfreak.data
 // Firestore collections: hal_clipItems, hal_notes, hal_categories, under
 // /users/{uid}/... (see ../../../../../firestore.rules at the repo root).
 //
-// Not yet wired to Firestore — no Firebase dependency added yet, so this
-// compiles standalone. That's the next increment, not done tonight.
+// kind/originDevice are plain Strings, not Kotlin enums — the TS side
+// defines these as string-literal unions ("text" | "image" | ...), and
+// Firestore's default POJO mapping serializes a Kotlin enum as its
+// `.name` (e.g. "TEXT", uppercase). Using a real enum here would write
+// values the extension's `clip.kind === "text"` checks would never
+// match — same collections, silently incompatible data. Constants below
+// exist so call sites don't have to spell the strings out by hand.
 
-enum class HalDevice { ANDROID, BROWSER }
+object HalClipKind {
+    const val TEXT = "text"
+    const val IMAGE = "image"
+    const val FILE = "file"
+    const val CODE = "code"
+}
 
-enum class HalClipKind { TEXT, IMAGE, FILE, CODE }
+object HalDevice {
+    const val ANDROID = "android"
+    const val BROWSER = "browser"
+}
 
 data class HalClipItem(
     val id: String = "",
-    val kind: HalClipKind = HalClipKind.TEXT,
+    val kind: String = HalClipKind.TEXT,
     val text: String? = null,
     val driveFileId: String? = null,
     val categoryId: String? = null,
     val pinned: Boolean = false,
     val createdAt: Long = 0,
-    val originDevice: HalDevice = HalDevice.ANDROID,
+    val originDevice: String = HalDevice.ANDROID,
 )
 
 data class HalAttachment(
