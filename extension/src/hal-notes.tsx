@@ -13,6 +13,7 @@ import { HalFontSize } from "./hal-font-size";
 import { halAuth } from "./hal-firebase";
 import { halGetValidAccessToken } from "./hal-auth";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
+import { halSubscribeToClips } from "./hal-sync";
 import {
   halCreateNote,
   halUpdateNote,
@@ -24,8 +25,8 @@ import {
   halSubscribeToCategories,
 } from "./hal-notes-sync";
 import { useHalToast, HalToast } from "./hal-toast";
-import { HalIconPin, HalIconPaperclip, HalIconCheck } from "./hal-icons";
-import type { HalNote, HalCategory, HalAttachment } from "@shared/schema";
+import { HalIconPin, HalIconPaperclip, HalIconCheck, HalIconExternalLink, HalIconImage } from "./hal-icons";
+import type { HalNote, HalCategory, HalAttachment, HalClipItem } from "@shared/schema";
 
 // docs/ctrl-freak-extension-ui-spec.md §3
 
@@ -61,7 +62,10 @@ function halRelativeTime(updatedAt: number): string {
 
 function HalNotesApp() {
   const [halUser, setHalUser] = useState<User | null>(null);
+  const [halView, setHalView] = useState<"notes" | "media">("notes");
   const [halNotes, setHalNotes] = useState<HalNote[]>([]);
+  const [halClips, setHalClips] = useState<HalClipItem[]>([]);
+  const [halMediaThumbs, setHalMediaThumbs] = useState<Record<string, string>>({});
   const [halCategories, setHalCategories] = useState<HalCategory[]>([]);
   const [halActiveCategoryId, setHalActiveCategoryId] = useState<string | "all">("all");
   const [halSearch, setHalSearch] = useState("");
@@ -110,13 +114,16 @@ function HalNotesApp() {
     if (!halUser) {
       setHalNotes([]);
       setHalCategories([]);
+      setHalClips([]);
       return;
     }
     const unsubNotes = halSubscribeToNotes(halUser.uid, setHalNotes);
     const unsubCategories = halSubscribeToCategories(halUser.uid, setHalCategories);
+    const unsubClips = halSubscribeToClips(halUser.uid, setHalClips);
     return () => {
       unsubNotes();
       unsubCategories();
+      unsubClips();
     };
   }, [halUser]);
 
@@ -173,6 +180,68 @@ function HalNotesApp() {
       return n.title.toLowerCase().includes(needle) || n.body.toLowerCase().includes(needle);
     });
   const halOrderedNotes = [...halVisibleNotes.filter((n) => n.pinned), ...halVisibleNotes.filter((n) => !n.pinned)];
+
+  type HalMediaItem = {
+    driveFileId: string;
+    name: string;
+    size: number;
+    isImage: boolean;
+    sortAt: number;
+    source: "note" | "clip";
+    context: string;
+  };
+  const halMediaItems: HalMediaItem[] = [
+    ...halNotes.flatMap((note) =>
+      note.attachments.map((att) => ({
+        driveFileId: att.driveFileId,
+        name: att.name,
+        size: att.size,
+        isImage: HAL_IMAGE_EXT.test(att.name),
+        sortAt: note.updatedAt,
+        source: "note" as const,
+        context: note.title || "Untitled note",
+      })),
+    ),
+    ...halClips
+      .filter((c) => c.kind === "image" && c.driveFileId)
+      .map((c) => ({
+        driveFileId: c.driveFileId!,
+        name: "Clipboard image",
+        size: 0,
+        isImage: true,
+        sortAt: c.createdAt,
+        source: "clip" as const,
+        context: c.originDevice === "android" ? "from phone" : "from browser",
+      })),
+  ].sort((a, b) => b.sortAt - a.sortAt);
+
+  useEffect(() => {
+    if (halView !== "media" || !halUser) return;
+    let cancelled = false;
+    (async () => {
+      const toFetch = halMediaItems.filter((item) => item.isImage && !halMediaThumbs[item.driveFileId]);
+      if (toFetch.length === 0) return;
+      try {
+        const accessToken = await halGetValidAccessToken();
+        for (const item of toFetch) {
+          if (cancelled) return;
+          try {
+            const blob = await halFetchDriveFileBlob(accessToken, item.driveFileId);
+            if (cancelled) return;
+            setHalMediaThumbs((prev) => ({ ...prev, [item.driveFileId]: URL.createObjectURL(blob) }));
+          } catch (err) {
+            console.error("hal:", err);
+          }
+        }
+      } catch (err) {
+        console.error("hal:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line
+  }, [halView, halUser, halNotes, halClips]);
 
   function halSelectNote(note: HalNote | null) {
     setHalSelectedNoteId(note?.id ?? null);
@@ -416,13 +485,80 @@ function HalNotesApp() {
           <span class="hal-wordmark">
             ctrl+<span class="hal-accent-part">freak</span>
           </span>
-          <span class="hal-crumb">/ notes</span>
+          <span class="hal-crumb">/ {halView === "notes" ? "notes" : "media"}</span>
         </div>
-        <button class="hal-btn-primary" onClick={() => halSelectNote(null)}>
-          + New note
-        </button>
+        <div class="hal-topbar-right">
+          <div class="hal-view-tabs">
+            <button
+              class={`hal-view-tab ${halView === "notes" ? "hal-active" : ""}`}
+              onClick={() => setHalView("notes")}
+            >
+              Notes
+            </button>
+            <button
+              class={`hal-view-tab ${halView === "media" ? "hal-active" : ""}`}
+              onClick={() => setHalView("media")}
+            >
+              Media
+            </button>
+          </div>
+          <button
+            class="hal-clipboard-link"
+            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("hal-popup.html") })}
+          >
+            <HalIconExternalLink /> clipboard
+          </button>
+          {halView === "notes" && (
+            <button class="hal-btn-primary" onClick={() => halSelectNote(null)}>
+              + New note
+            </button>
+          )}
+        </div>
       </div>
 
+      {halView === "media" ? (
+        <div class="hal-media-view">
+          {halMediaItems.length === 0 ? (
+            <div class="hal-empty-editor">
+              <div class="hal-empty-well">◱</div>
+              <p class="hal-empty-title">No media yet</p>
+              <p class="hal-empty-body">
+                Images you sync from the clipboard and files you attach to notes show up here.
+              </p>
+            </div>
+          ) : (
+            <div class="hal-media-grid">
+              {halMediaItems.map((item) => (
+                <a
+                  key={`${item.source}-${item.driveFileId}`}
+                  class="hal-media-card"
+                  href={`https://drive.google.com/file/d/${item.driveFileId}/view`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open in Google Drive"
+                >
+                  <div class="hal-media-thumb">
+                    {halMediaThumbs[item.driveFileId] ? (
+                      <img src={halMediaThumbs[item.driveFileId]} />
+                    ) : item.isImage ? (
+                      <HalIconImage size={22} />
+                    ) : (
+                      <HalIconPaperclip size={20} />
+                    )}
+                  </div>
+                  <div class="hal-media-info">
+                    <div class="hal-media-name">{item.name}</div>
+                    <div class="hal-media-meta">
+                      {item.source === "note" ? item.context : item.context}
+                      {item.size > 0 ? ` · ${halFormatSize(item.size)}` : ""}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div class="hal-layout">
         <aside class="hal-sidebar">
           <div class="hal-search-wrap">
@@ -853,6 +989,7 @@ function HalNotesApp() {
             </div>
           </section>
       </div>
+      )}
 
       {halShowDeleteConfirm && (
         <div class="hal-dialog-scrim" onClick={() => setHalShowDeleteConfirm(false)}>
