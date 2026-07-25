@@ -72,21 +72,38 @@ export async function halSignIn(): Promise<void> {
 }
 
 // Returns a live Drive-scoped access token, renewing silently if the cached
-// one expired. Throws if silent renewal fails (browser session cookie gone)
-// — the caller should fall back to prompting the user to sign in again.
+// one expired. Silent renewal (prompt=none) is genuinely unreliable in an
+// extension context — Google can decline to issue a token without any UI
+// for reasons outside our control (session state, third-party storage
+// partitioning). Rather than surface that as a dead end, fall back to an
+// interactive prompt: this function is always called from within a user
+// gesture (a button click), so Chrome allows the popup.
 export async function halGetValidAccessToken(): Promise<string> {
   const cached = await halGetCachedAccessToken();
   if (cached) return cached;
 
   const clientId = halClientId();
-  const redirectUrl = await chrome.identity.launchWebAuthFlow({
+
+  const silentRedirect = await chrome.identity.launchWebAuthFlow({
     url: halBuildAuthUrl(clientId, false),
     interactive: false,
   });
-  if (!redirectUrl) {
-    throw new Error("Silent token renewal failed — please sign in again");
+  if (silentRedirect) {
+    try {
+      return await halHandleAuthRedirect(silentRedirect);
+    } catch {
+      // fall through to interactive
+    }
   }
-  return halHandleAuthRedirect(redirectUrl);
+
+  const interactiveRedirect = await chrome.identity.launchWebAuthFlow({
+    url: halBuildAuthUrl(clientId, true),
+    interactive: true,
+  });
+  if (!interactiveRedirect) {
+    throw new Error("Drive access was not granted — try again");
+  }
+  return halHandleAuthRedirect(interactiveRedirect);
 }
 
 export async function halSignOut(): Promise<void> {

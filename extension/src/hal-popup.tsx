@@ -134,13 +134,18 @@ function HalPopup() {
         </div>
       </div>
 
+      <h2 class="hal-section-label">Clipboard</h2>
       <button class="hal-button" onClick={halHandleSyncNow} disabled={halBusy}>
         {halBusy ? "Syncing…" : "Sync clipboard now"}
       </button>
       {halError && <p class="hal-error">{halError}</p>}
 
       {halClips.length === 0 ? (
-        <p class="hal-empty">Nothing synced yet.</p>
+        <p class="hal-empty">
+          Nothing synced yet — copy something anywhere on this computer, then click Sync. Do it
+          again for the next thing; everything you've synced stays listed below, on both this
+          extension and the Android app.
+        </p>
       ) : (
         <ul class="hal-clip-list">
           {[...halClips]
