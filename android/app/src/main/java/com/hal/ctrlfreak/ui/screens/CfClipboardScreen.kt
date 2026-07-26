@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentPasteOff
@@ -29,8 +30,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +67,10 @@ fun CfClipboardScreen(
     onTogglePin: (HalClipItem) -> Unit,
     onClearAll: () -> Unit,
     onDeleteSelected: (Set<String>) -> Unit,
+    caption: String,
+    onCaptionChange: (String) -> Unit,
+    onUploadFile: () -> Unit,
+    uploading: Boolean,
 ) {
     val pinned = clips.filter { it.pinned }
     val recent = clips.filterNot { it.pinned }
@@ -105,12 +112,50 @@ fun CfClipboardScreen(
             }
         }
 
-        CfPrimaryButton(
-            text = if (syncing) "Syncing…" else "Sync clipboard now",
-            onClick = onSyncNow,
-            loading = syncing,
-            modifier = Modifier.padding(horizontal = CfSpace.S14),
+        OutlinedTextField(
+            value = caption,
+            onValueChange = onCaptionChange,
+            placeholder = { Text("Add a caption (optional)", style = CfType.Body.copy(color = CfColor.InkFaint)) },
+            textStyle = CfType.Body,
+            singleLine = true,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = CfColor.Inset,
+                unfocusedContainerColor = CfColor.Inset,
+                focusedIndicatorColor = CfColor.Accent,
+                unfocusedIndicatorColor = CfColor.Rule,
+                cursorColor = CfColor.Accent,
+            ),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = CfSpace.S14, vertical = CfSpace.S4),
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = CfSpace.S14),
+            horizontalArrangement = Arrangement.spacedBy(CfSpace.S8),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CfPrimaryButton(
+                text = if (syncing) "Syncing…" else "Sync clipboard",
+                onClick = onSyncNow,
+                loading = syncing,
+                enabled = !uploading,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .size(CfSpace.TapTarget)
+                    .clip(RoundedCornerShape(CfRadius.Small))
+                    .background(CfColor.Surface)
+                    .border(1.dp, CfColor.Rule, RoundedCornerShape(CfRadius.Small))
+                    .clickable(enabled = !syncing && !uploading, onClick = onUploadFile),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (uploading) {
+                    Text("…", style = CfType.Body.copy(color = CfColor.InkMuted))
+                } else {
+                    Icon(Icons.Filled.AttachFile, contentDescription = "Upload file", tint = CfColor.InkMuted, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = CfSpace.S14, vertical = CfSpace.S6),
@@ -251,7 +296,7 @@ private fun CfClipCard(
         }
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.SpaceBetween) {
-                if (clip.kind == HalClipKind.IMAGE) {
+                if (clip.kind == HalClipKind.IMAGE || clip.kind == HalClipKind.FILE) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
@@ -261,10 +306,20 @@ private fun CfClipCard(
                                 .border(1.dp, CfColor.Rule, RoundedCornerShape(CfRadius.Small)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Filled.Image, contentDescription = null, tint = CfColor.Cyan, modifier = Modifier.size(16.dp))
+                            Icon(
+                                if (clip.kind == HalClipKind.IMAGE) Icons.Filled.Image else Icons.Filled.AttachFile,
+                                contentDescription = null,
+                                tint = CfColor.Cyan,
+                                modifier = Modifier.size(16.dp),
+                            )
                         }
                         Spacer(Modifier.width(CfSpace.S8))
-                        Text("[image]", style = CfType.BodyMuted)
+                        Text(
+                            clip.text ?: if (clip.kind == HalClipKind.IMAGE) "[image]" else "[file]",
+                            style = CfType.BodyMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 } else {
                     Text(
