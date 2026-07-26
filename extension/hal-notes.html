@@ -382,15 +382,15 @@
         color: var(--danger);
       }
 
-      /* ---- category flyout ---- */
-      .hal-cat-row-wrap {
-        position: relative;
-      }
+      /* ---- category flyout ----
+         position: fixed with coordinates computed from the trigger row's
+         getBoundingClientRect() (see hal-notes.tsx) — NOT position: absolute
+         relative to the row. The sidebar sits inside a flex layout with no
+         overflow clipping, so an absolutely-positioned child expanded the
+         whole page's scrollWidth and put a horizontal scrollbar under the
+         entire app. Fixed positioning is relative to the viewport and can't
+         affect any ancestor's scrollable content size. */
       .hal-category-flyout {
-        position: absolute;
-        left: 100%;
-        top: 0;
-        margin-left: 8px;
         width: 240px;
         max-height: 320px;
         overflow-y: auto;
