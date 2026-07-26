@@ -626,12 +626,10 @@ function HalNotesApp() {
           ) : (
             <div class="hal-media-grid">
               {halMediaItems.map((item) => (
-                <a
+                <div
                   key={`${item.source}-${item.driveFileId}`}
                   class="hal-media-card"
-                  href={`https://drive.google.com/file/d/${item.driveFileId}/view`}
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={() => window.open(`https://drive.google.com/file/d/${item.driveFileId}/view`, "_blank")}
                   title="Open in Google Drive"
                 >
                   <div class="hal-media-thumb">
@@ -642,6 +640,17 @@ function HalNotesApp() {
                     ) : (
                       <HalIconPaperclip size={20} />
                     )}
+                    <a
+                      class="hal-media-download"
+                      href={`https://drive.google.com/uc?export=download&id=${item.driveFileId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Download"
+                      aria-label="Download"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      ↓
+                    </a>
                   </div>
                   <div class="hal-media-info">
                     <div class="hal-media-name">{item.name}</div>
@@ -650,7 +659,7 @@ function HalNotesApp() {
                       {item.size > 0 ? ` · ${halFormatSize(item.size)}` : ""}
                     </div>
                   </div>
-                </a>
+                </div>
               ))}
             </div>
           )}
