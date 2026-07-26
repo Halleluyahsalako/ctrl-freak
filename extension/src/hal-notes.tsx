@@ -69,6 +69,7 @@ function HalNotesApp() {
   const [halCategories, setHalCategories] = useState<HalCategory[]>([]);
   const [halActiveCategoryId, setHalActiveCategoryId] = useState<string | "all">("all");
   const [halCategoryFlyoutId, setHalCategoryFlyoutId] = useState<string | null>(null);
+  const [halCategoryFlyoutPos, setHalCategoryFlyoutPos] = useState<{ top: number; left: number } | null>(null);
   const [halSearch, setHalSearch] = useState("");
   const [halNewCategoryName, setHalNewCategoryName] = useState("");
 
@@ -107,6 +108,14 @@ function HalNotesApp() {
   // instead keeps every in-flight autosave looking at the same live answer.
   const halSelectedNoteIdRef = useRef<string | null>(null);
   const halCreatingNoteRef = useRef(false);
+  // Bumped on every halSelectNote call (switching notes or starting a new
+  // blank one). A pending autosave create that's still in flight when the
+  // user switches away captures the token before it starts; if the token no
+  // longer matches by the time the create resolves, the result is discarded
+  // instead of getting wired into whatever draft is now on screen — the note
+  // still gets created correctly in Firestore, it just isn't force-selected
+  // out from under a different draft the user has since moved on to.
+  const halDraftTokenRef = useRef(0);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -141,6 +150,7 @@ function HalNotesApp() {
   useEffect(() => {
     if (!halUser || !halHasSelection) return;
     if (!halTitle.trim() && !halBody.trim() && halAttachments.length === 0) return;
+    const startToken = halDraftTokenRef.current;
     const timer = window.setTimeout(async () => {
       const payload = {
         title: halTitle.trim() || "Untitled note",
@@ -157,8 +167,14 @@ function HalNotesApp() {
           halCreatingNoteRef.current = true;
           try {
             const newId = await halCreateNote(halUser.uid, payload);
-            halSelectedNoteIdRef.current = newId;
-            setHalSelectedNoteId(newId);
+            // Only wire the new id into the current draft if the user
+            // hasn't switched to a different note/blank draft while this
+            // create was in flight — the note is safely saved either way,
+            // this just avoids stealing selection out from under them.
+            if (halDraftTokenRef.current === startToken) {
+              halSelectedNoteIdRef.current = newId;
+              setHalSelectedNoteId(newId);
+            }
           } finally {
             halCreatingNoteRef.current = false;
           }
@@ -167,7 +183,7 @@ function HalNotesApp() {
         // flight — skip this tick rather than race it into a duplicate
         // note. The next autosave (or the trailing one once typing stops)
         // will pick up the latest content once halSelectedNoteIdRef is set.
-        setHalUpdatedAt(Date.now());
+        if (halDraftTokenRef.current === startToken) setHalUpdatedAt(Date.now());
       } catch (err) {
         console.error("hal:", err);
       }
@@ -310,6 +326,7 @@ function HalNotesApp() {
   }, [halView, halUser, halNotes, halClips]);
 
   function halSelectNote(note: HalNote | null) {
+    halDraftTokenRef.current += 1;
     setHalSelectedNoteId(note?.id ?? null);
     setHalHasSelection(true);
     setHalTitle(note?.title ?? "");
@@ -665,10 +682,20 @@ function HalNotesApp() {
               const halCatNotes = halNotes.filter((n) => n.categoryId === cat.id);
               const halCatOrdered = [...halCatNotes.filter((n) => n.pinned), ...halCatNotes.filter((n) => !n.pinned)];
               return (
-                <div key={cat.id} class="hal-cat-row-wrap hal-category-anchor">
+                <div key={cat.id} class="hal-category-anchor">
                   <div
                     class={`hal-cat-row ${halCategoryFlyoutId === cat.id ? "hal-selected" : ""}`}
-                    onClick={() => setHalCategoryFlyoutId(halCategoryFlyoutId === cat.id ? null : cat.id)}
+                    onClick={(e) => {
+                      if (halCategoryFlyoutId === cat.id) {
+                        setHalCategoryFlyoutId(null);
+                        return;
+                      }
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const left = Math.min(rect.right + 8, window.innerWidth - 248);
+                      const top = Math.min(rect.top, window.innerHeight - 340);
+                      setHalCategoryFlyoutPos({ top: Math.max(top, 8), left: Math.max(left, 8) });
+                      setHalCategoryFlyoutId(cat.id);
+                    }}
                   >
                     <span class="hal-dot" style={{ background: HAL_CATEGORY_PALETTE[i % HAL_CATEGORY_PALETTE.length] }} />
                     <span class="hal-cat-name">{cat.name}</span>
@@ -677,8 +704,11 @@ function HalNotesApp() {
                       ×
                     </button>
                   </div>
-                  {halCategoryFlyoutId === cat.id && (
-                    <div class="hal-category-flyout">
+                  {halCategoryFlyoutId === cat.id && halCategoryFlyoutPos && (
+                    <div
+                      class="hal-category-flyout"
+                      style={{ position: "fixed", top: `${halCategoryFlyoutPos.top}px`, left: `${halCategoryFlyoutPos.left}px` }}
+                    >
                       <div class="hal-flyout-header">
                         <span class="hal-flyout-title">{cat.name}</span>
                         <span class="hal-flyout-count">{halCatNotes.length}</span>
