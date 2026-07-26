@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material3.Icon
@@ -92,6 +94,7 @@ fun CfMediaScreen(
     items: List<HalMediaItem>,
     thumbs: Map<String, ImageBitmap>,
     onOpenItem: (HalMediaItem) -> Unit,
+    onDownloadItem: (HalMediaItem) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().background(CfColor.Background)) {
         Text(
@@ -139,6 +142,23 @@ fun CfMediaScreen(
                                 Icon(Icons.Filled.Image, contentDescription = null, tint = CfColor.Cyan)
                             } else {
                                 Icon(Icons.Filled.AttachFile, contentDescription = null, tint = CfColor.InkMuted)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(CfSpace.S6)
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(CfRadius.Small))
+                                    .background(CfColor.Background.copy(alpha = 0.75f))
+                                    .clickable { onDownloadItem(item) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "Download",
+                                    tint = CfColor.Ink,
+                                    modifier = Modifier.size(14.dp),
+                                )
                             }
                         }
                         Column(modifier = Modifier.padding(CfSpace.S8)) {
