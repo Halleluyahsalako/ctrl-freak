@@ -31,6 +31,21 @@ export async function halReadClipboardSmart(): Promise<HalClipboardRead | null> 
   return text ? { kind: "text", text } : null;
 }
 
+// Chrome's Clipboard API only reliably accepts "image/png" as a
+// ClipboardItem key — writing a jpeg/webp/etc blob under its own mime type
+// throws (caught upstream and misread as a network error, which it isn't).
+// Anything not already png gets redrawn through a canvas first.
+async function halToPngBlob(blob: Blob): Promise<Blob> {
+  if (blob.type === "image/png") return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return blob;
+  ctx.drawImage(bitmap, 0, 0);
+  return canvas.convertToBlob({ type: "image/png" });
+}
+
 export async function halWriteImageToClipboard(blob: Blob): Promise<void> {
-  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+  const pngBlob = await halToPngBlob(blob);
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
 }
