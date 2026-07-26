@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { halAuth } from "./hal-firebase";
 import { halSignIn, halSignOut, halGetValidAccessToken } from "./hal-auth";
@@ -26,8 +26,11 @@ import {
   HalIconClipboardPlus,
   HalIconClipboardOff,
   HalIconCheck,
+  HalIconPaperclip,
 } from "./hal-icons";
 import type { HalClipItem } from "@shared/schema";
+
+const HAL_IMAGE_MIME = /^image\//;
 
 // docs/ctrl-freak-extension-ui-spec.md §2
 
@@ -50,7 +53,10 @@ function HalPopup() {
   const [halSelectedIds, setHalSelectedIds] = useState<Set<string>>(new Set());
   const [halConfirmClearAll, setHalConfirmClearAll] = useState(false);
   const [halConfirmDeleteSelected, setHalConfirmDeleteSelected] = useState(false);
+  const [halCaption, setHalCaption] = useState("");
+  const [halUploadBusy, setHalUploadBusy] = useState(false);
   const { toast, show: halToast } = useHalToast();
+  const halFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -82,6 +88,8 @@ function HalPopup() {
         return;
       }
 
+      const caption = halCaption.trim();
+
       if (read.kind === "text") {
         await halPushClip(halUser.uid, {
           kind: "text",
@@ -100,16 +108,49 @@ function HalPopup() {
         await halPushClip(halUser.uid, {
           kind: "image",
           driveFileId,
+          text: caption || undefined,
           pinned: false,
           originDevice: "browser",
         });
       }
+      setHalCaption("");
       halToast("Synced 1 item", "success");
     } catch (err) {
       console.error("hal:", err);
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalBusy(false);
+    }
+  }
+
+  // Direct upload — no note required. Pairs with the "share media without
+  // adding a note" request: a file picked here becomes its own clip (kind
+  // "image" or "file", never wraps a note), landing straight in the feed
+  // and in the Media tab on the notes page.
+  async function halHandleFileUpload(e: Event) {
+    if (!halUser) return;
+    const file = (e.target as HTMLInputElement).files?.[0];
+    (e.target as HTMLInputElement).value = "";
+    if (!file) return;
+    setHalUploadBusy(true);
+    try {
+      const accessToken = await halGetValidAccessToken();
+      const driveFileId = await halUploadFileToDrive(accessToken, file, file.name);
+      const caption = halCaption.trim();
+      await halPushClip(halUser.uid, {
+        kind: HAL_IMAGE_MIME.test(file.type) ? "image" : "file",
+        driveFileId,
+        text: caption || file.name,
+        pinned: false,
+        originDevice: "browser",
+      });
+      setHalCaption("");
+      halToast("Uploaded", "success");
+    } catch (err) {
+      console.error("hal:", err);
+      halToast("Couldn't sync — check your connection", "error");
+    } finally {
+      setHalUploadBusy(false);
     }
   }
 
@@ -126,6 +167,10 @@ function HalPopup() {
 
   async function halHandlePaste(clip: HalClipItem) {
     try {
+      if (clip.kind === "file" && clip.driveFileId) {
+        window.open(`https://drive.google.com/file/d/${clip.driveFileId}/view`, "_blank");
+        return;
+      }
       if (clip.kind === "image" && clip.driveFileId) {
         const accessToken = await halGetValidAccessToken();
         const blob = await halFetchDriveFileBlob(accessToken, clip.driveFileId);
@@ -225,13 +270,36 @@ function HalPopup() {
       </div>
 
       <div class="hal-popup-body">
-        <button class="hal-sync-btn" onClick={halHandleSyncNow} disabled={halBusy}>
-          {halBusy ? "Syncing…" : (
-            <>
-              <HalIconClipboardPlus /> Sync clipboard now
-            </>
-          )}
-        </button>
+        <input
+          class="hal-caption-input"
+          placeholder="Add a caption (optional)"
+          value={halCaption}
+          onInput={(e) => setHalCaption((e.target as HTMLInputElement).value)}
+        />
+        <div class="hal-action-row">
+          <button class="hal-sync-btn" onClick={halHandleSyncNow} disabled={halBusy || halUploadBusy}>
+            {halBusy ? "Syncing…" : (
+              <>
+                <HalIconClipboardPlus /> Sync clipboard
+              </>
+            )}
+          </button>
+          <button
+            class="hal-upload-btn"
+            onClick={() => halFileInputRef.current?.click()}
+            disabled={halBusy || halUploadBusy}
+            aria-label="Upload file"
+            title="Upload a file — no note required"
+          >
+            {halUploadBusy ? "…" : <HalIconPaperclip size={15} />}
+          </button>
+          <input
+            ref={halFileInputRef}
+            type="file"
+            style={{ display: "none" }}
+            onChange={halHandleFileUpload}
+          />
+        </div>
         <div class="hal-toolbar-row">
           <p class="hal-count-label">{halClips.length} recent · pinned first</p>
           <div class="hal-toolbar-actions">
@@ -309,7 +377,14 @@ function HalPopup() {
                         <div class="hal-thumb-well">
                           <HalIconImage />
                         </div>
-                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>[image]</span>
+                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>{clip.text || "[image]"}</span>
+                      </div>
+                    ) : clip.kind === "file" ? (
+                      <div class="hal-clip-image-row">
+                        <div class="hal-thumb-well">
+                          <HalIconPaperclip size={16} />
+                        </div>
+                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>{clip.text || "[file]"}</span>
                       </div>
                     ) : (
                       <span
