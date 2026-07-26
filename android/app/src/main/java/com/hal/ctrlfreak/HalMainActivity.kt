@@ -160,6 +160,8 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     var editAttachments by remember { mutableStateOf<List<HalAttachment>>(emptyList()) }
     var uploadingAttachmentNames by remember { mutableStateOf<Set<String>>(emptySet()) }
     var mediaThumbs by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    var clipCaption by remember { mutableStateOf("") }
+    var clipUploading by remember { mutableStateOf(false) }
 
     var pendingShareIntent by remember { mutableStateOf<Intent?>(null) }
     // Reacts to sharedIntent changing (including a share arriving while the
@@ -269,6 +271,45 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
             }
         } catch (e: Exception) {
             halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+        }
+    }
+
+    // Direct clip upload — no note required (the "share media without
+    // adding a note" request). Mirrors the extension popup's Upload button:
+    // picks any file, uploads straight to Drive, pushes it as its own clip.
+    val clipUploadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        val clipUploadUid = halUser?.uid
+        if (uri != null && clipUploadUid != null) {
+            scope.launch {
+                clipUploading = true
+                try {
+                    val name = halQueryDisplayName(context, uri) ?: "file"
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    if (bytes != null) {
+                        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                        val token = halEnsureDriveAccessToken()
+                        val driveFileId = halUploadFileToDrive(token, bytes, mimeType, name)
+                        val kind = if (mimeType.startsWith("image/")) HalClipKind.IMAGE else HalClipKind.FILE
+                        halPushClip(
+                            clipUploadUid,
+                            HalClipItem(
+                                kind = kind,
+                                driveFileId = driveFileId,
+                                text = clipCaption.trim().ifBlank { name },
+                                originDevice = HalDevice.ANDROID,
+                            ),
+                        )
+                        clipCaption = ""
+                        halShowSnackbar("Uploaded", CfSnackbarKind.Success)
+                    }
+                } catch (e: Exception) {
+                    halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                } finally {
+                    clipUploading = false
+                }
+            }
         }
     }
 
@@ -508,7 +549,8 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                                     if (bytes != null) {
                                         val token = halEnsureDriveAccessToken()
                                         val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-clip-${System.currentTimeMillis()}.png")
-                                        halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
+                                        halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, text = clipCaption.trim().ifBlank { null }, originDevice = HalDevice.ANDROID))
+                                        clipCaption = ""
                                         halShowSnackbar("Synced 1 item", CfSnackbarKind.Success)
                                     } else {
                                         halShowSnackbar("Clipboard's empty — nothing to sync", CfSnackbarKind.Neutral)
@@ -531,7 +573,12 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                     },
                     onCopyBack = { clip ->
                         scope.launch {
-                            if (clip.text != null) {
+                            if (clip.driveFileId != null) {
+                                // No OS-clipboard image write path on Android yet — opening the
+                                // real Drive file is a working action instead of a silent no-op,
+                                // which is what tapping an image/file clip did before this.
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://drive.google.com/file/d/${clip.driveFileId}/view")))
+                            } else if (clip.text != null) {
                                 halWriteClipboardText(context, clip.text)
                                 halShowSnackbar("Copied", CfSnackbarKind.Success)
                             }
@@ -560,6 +607,10 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                             }
                         }
                     },
+                    caption = clipCaption,
+                    onCaptionChange = { clipCaption = it },
+                    onUploadFile = { clipUploadLauncher.launch("*/*") },
+                    uploading = clipUploading,
                 )
 
                 HalTab.NOTES -> CfNotesScreen(
