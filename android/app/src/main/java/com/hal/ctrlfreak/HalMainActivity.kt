@@ -743,6 +743,26 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
                             }
                         }
                     },
+                    onDeleteItems = { items ->
+                        scope.launch {
+                            try {
+                                val clipIds = items.mapNotNull { it.clipId }
+                                if (clipIds.isNotEmpty()) halDeleteClips(uid, clipIds)
+                                val noteRemovals = mutableMapOf<String, MutableSet<String>>()
+                                for (item in items) {
+                                    val noteId = item.noteId ?: continue
+                                    noteRemovals.getOrPut(noteId) { mutableSetOf() }.add(item.driveFileId)
+                                }
+                                for ((noteId, removeIds) in noteRemovals) {
+                                    val note = notes.find { it.id == noteId } ?: continue
+                                    halUpdateNote(uid, noteId, note.copy(attachments = note.attachments.filterNot { removeIds.contains(it.driveFileId) }))
+                                }
+                                halShowSnackbar("Deleted ${items.size} item${if (items.size == 1) "" else "s"}", CfSnackbarKind.Neutral)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
                 )
             }
         }
