@@ -52,6 +52,20 @@ function halFormatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Focuses an already-open ctrl+freak tab instead of piling up a new one
+// every time "clipboard" is clicked.
+async function halOpenOrFocusTab(pageUrl: string) {
+  const fullUrl = chrome.runtime.getURL(pageUrl);
+  const existing = await chrome.tabs.query({ url: fullUrl });
+  const tab = existing[0];
+  if (tab?.id != null) {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: fullUrl });
+  }
+}
+
 function halRelativeTime(updatedAt: number): string {
   const minutes = Math.floor((Date.now() - updatedAt) / 60_000);
   if (minutes < 1) return "just now";
@@ -599,10 +613,7 @@ function HalNotesApp() {
               Media
             </button>
           </div>
-          <button
-            class="hal-clipboard-link"
-            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("hal-popup.html") })}
-          >
+          <button class="hal-clipboard-link" onClick={() => halOpenOrFocusTab("hal-popup.html")}>
             <HalIconExternalLink /> clipboard
           </button>
           {halView === "notes" && (

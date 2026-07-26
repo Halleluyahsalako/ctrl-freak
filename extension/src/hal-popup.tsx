@@ -36,6 +36,21 @@ const HAL_IMAGE_MIME = /^image\//;
 
 const HAL_CODE_LIKE = /^\S+$/; // single unbroken token — a URL, path, var name
 
+// Focuses an already-open ctrl+freak tab instead of piling up a new one
+// every time — the popup gets reopened a lot, and "click notes" used to
+// spawn a fresh tab each time with no way to tell them apart.
+async function halOpenOrFocusTab(pageUrl: string) {
+  const fullUrl = chrome.runtime.getURL(pageUrl);
+  const existing = await chrome.tabs.query({ url: fullUrl });
+  const tab = existing[0];
+  if (tab?.id != null) {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: fullUrl });
+  }
+}
+
 function halRelativeTime(createdAt: number): string {
   const minutes = Math.floor((Date.now() - createdAt) / 60_000);
   if (minutes < 1) return "just now";
@@ -260,10 +275,7 @@ function HalPopup() {
           <span class="hal-status-dot hal-online" />
           <span>synced</span>
           <span>·</span>
-          <button
-            class="hal-notes-link"
-            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL("hal-notes.html") })}
-          >
+          <button class="hal-notes-link" onClick={() => halOpenOrFocusTab("hal-notes.html")}>
             <HalIconExternalLink /> notes
           </button>
         </div>
