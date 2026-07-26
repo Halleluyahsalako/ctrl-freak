@@ -661,6 +661,25 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                         val url = "https://drive.google.com/file/d/${item.driveFileId}/view"
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
+                    onDownloadItem = { item ->
+                        scope.launch {
+                            try {
+                                val token = halEnsureDriveAccessToken()
+                                val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+                                val request = android.app.DownloadManager.Request(
+                                    Uri.parse("https://www.googleapis.com/drive/v3/files/${item.driveFileId}?alt=media"),
+                                )
+                                    .addRequestHeader("Authorization", "Bearer $token")
+                                    .setTitle(item.name)
+                                    .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, item.name)
+                                downloadManager.enqueue(request)
+                                halShowSnackbar("Downloading…", CfSnackbarKind.Success)
+                            } catch (e: Exception) {
+                                halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+                            }
+                        }
+                    },
                 )
             }
         }
