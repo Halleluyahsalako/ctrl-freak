@@ -13,7 +13,7 @@ import { HalFontSize } from "./hal-font-size";
 import { halAuth } from "./hal-firebase";
 import { halGetValidAccessToken } from "./hal-auth";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
-import { halSubscribeToClips } from "./hal-sync";
+import { halSubscribeToClips, halDeleteClips } from "./hal-sync";
 import {
   halCreateNote,
   halUpdateNote,
@@ -106,6 +106,10 @@ function HalNotesApp() {
   const [halNoteSelectMode, setHalNoteSelectMode] = useState(false);
   const [halSelectedNoteIds, setHalSelectedNoteIds] = useState<Set<string>>(new Set());
   const [halShowBulkDeleteConfirm, setHalShowBulkDeleteConfirm] = useState(false);
+  const [halMediaSelectMode, setHalMediaSelectMode] = useState(false);
+  const [halMediaSelectedKeys, setHalMediaSelectedKeys] = useState<Set<string>>(new Set());
+  const [halConfirmDeleteMediaSelected, setHalConfirmDeleteMediaSelected] = useState(false);
+  const [halConfirmClearAllMedia, setHalConfirmClearAllMedia] = useState(false);
   const [, halForceToolbarTick] = useState(0);
 
   const { toast, show: halToast } = useHalToast();
@@ -285,6 +289,8 @@ function HalNotesApp() {
     sortAt: number;
     source: "note" | "clip";
     context: string;
+    noteId?: string;
+    clipId?: string;
   };
   const halMediaItems: HalMediaItem[] = [
     ...halNotes.flatMap((note) =>
@@ -296,20 +302,52 @@ function HalNotesApp() {
         sortAt: note.updatedAt,
         source: "note" as const,
         context: note.title || "Untitled note",
+        noteId: note.id,
       })),
     ),
     ...halClips
-      .filter((c) => c.kind === "image" && c.driveFileId)
+      .filter((c) => (c.kind === "image" || c.kind === "file") && c.driveFileId)
       .map((c) => ({
         driveFileId: c.driveFileId!,
-        name: "Clipboard image",
+        name: c.text || (c.kind === "image" ? "Clipboard image" : "Clipboard file"),
         size: 0,
-        isImage: true,
+        isImage: c.kind === "image",
         sortAt: c.createdAt,
         source: "clip" as const,
         context: c.originDevice === "android" ? "from phone" : "from browser",
+        clipId: c.id,
       })),
   ].sort((a, b) => b.sortAt - a.sortAt);
+
+  async function halHandleDeleteMediaItems(items: HalMediaItem[]) {
+    if (!halUser) return;
+    const clipIds = items.filter((i) => i.source === "clip" && i.clipId).map((i) => i.clipId!);
+    const noteRemovals = new Map<string, Set<string>>();
+    for (const item of items) {
+      if (item.source === "note" && item.noteId) {
+        if (!noteRemovals.has(item.noteId)) noteRemovals.set(item.noteId, new Set());
+        noteRemovals.get(item.noteId)!.add(item.driveFileId);
+      }
+    }
+    try {
+      if (clipIds.length > 0) await halDeleteClips(halUser.uid, clipIds);
+      for (const [noteId, removeIds] of noteRemovals) {
+        const note = halNotes.find((n) => n.id === noteId);
+        if (!note) continue;
+        await halUpdateNote(halUser.uid, noteId, {
+          title: note.title,
+          body: note.body,
+          categoryId: note.categoryId,
+          attachments: note.attachments.filter((a) => !removeIds.has(a.driveFileId)),
+          pinned: note.pinned,
+        });
+      }
+      halToast(`Deleted ${items.length} item${items.length === 1 ? "" : "s"}`, "neutral");
+    } catch (err) {
+      console.error("hal:", err);
+      halToast("Couldn't sync — check your connection", "error");
+    }
+  }
 
   useEffect(() => {
     if (halView !== "media" || !halUser) return;
@@ -626,6 +664,53 @@ function HalNotesApp() {
 
       {halView === "media" ? (
         <div class="hal-media-view">
+          <div class="hal-toolbar-row">
+            <p class="hal-count-label">{halMediaItems.length} items</p>
+            <div class="hal-toolbar-actions">
+              {halMediaSelectMode ? (
+                <button
+                  class="hal-text-btn"
+                  onClick={() => {
+                    setHalMediaSelectMode(false);
+                    setHalMediaSelectedKeys(new Set());
+                  }}
+                >
+                  Cancel
+                </button>
+              ) : (
+                <>
+                  <button
+                    class="hal-text-btn"
+                    onClick={() => setHalMediaSelectMode(true)}
+                    disabled={halMediaItems.length === 0}
+                  >
+                    Select
+                  </button>
+                  <button
+                    class="hal-text-btn hal-text-btn-danger"
+                    onClick={() => setHalConfirmClearAllMedia(true)}
+                    disabled={halMediaItems.length === 0}
+                  >
+                    Delete all
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {halMediaSelectMode && (
+            <div class="hal-select-bar">
+              <span>{halMediaSelectedKeys.size} selected</span>
+              <button
+                class="hal-text-btn hal-text-btn-danger"
+                disabled={halMediaSelectedKeys.size === 0}
+                onClick={() => setHalConfirmDeleteMediaSelected(true)}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+
           {halMediaItems.length === 0 ? (
             <div class="hal-empty-editor">
               <div class="hal-empty-well">◱</div>
@@ -636,42 +721,129 @@ function HalNotesApp() {
             </div>
           ) : (
             <div class="hal-media-grid">
-              {halMediaItems.map((item) => (
-                <div
-                  key={`${item.source}-${item.driveFileId}`}
-                  class="hal-media-card"
-                  onClick={() => window.open(`https://drive.google.com/file/d/${item.driveFileId}/view`, "_blank")}
-                  title="Open in Google Drive"
-                >
-                  <div class="hal-media-thumb">
-                    {halMediaThumbs[item.driveFileId] ? (
-                      <img src={halMediaThumbs[item.driveFileId]} />
-                    ) : item.isImage ? (
-                      <HalIconImage size={22} />
-                    ) : (
-                      <HalIconPaperclip size={20} />
-                    )}
+              {halMediaItems.map((item) => {
+                const key = `${item.source}-${item.driveFileId}`;
+                return (
+                  <div key={key} class="hal-media-card">
+                    <div
+                      class="hal-media-thumb"
+                      onClick={() =>
+                        halMediaSelectMode
+                          ? setHalMediaSelectedKeys((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(key)) next.delete(key);
+                              else next.add(key);
+                              return next;
+                            })
+                          : window.open(`https://drive.google.com/file/d/${item.driveFileId}/view`, "_blank")
+                      }
+                      title={halMediaSelectMode ? "Click to select" : "Open in Google Drive"}
+                    >
+                      {halMediaThumbs[item.driveFileId] ? (
+                        <img src={halMediaThumbs[item.driveFileId]} />
+                      ) : item.isImage ? (
+                        <HalIconImage size={22} />
+                      ) : (
+                        <HalIconPaperclip size={20} />
+                      )}
+                      {halMediaSelectMode && (
+                        <span
+                          class={`hal-checkbox hal-media-checkbox ${halMediaSelectedKeys.has(key) ? "hal-checked" : ""}`}
+                          aria-label={halMediaSelectedKeys.has(key) ? "Selected" : "Not selected"}
+                        >
+                          {halMediaSelectedKeys.has(key) && <HalIconCheck size={11} />}
+                        </span>
+                      )}
+                      {!halMediaSelectMode && (
+                        <button
+                          class="hal-media-delete-icon"
+                          title="Delete"
+                          aria-label="Delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            halHandleDeleteMediaItems([item]);
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    <div class="hal-media-info">
+                      <div class="hal-media-name">{item.name}</div>
+                      <div class="hal-media-meta">
+                        {item.context}
+                        {item.size > 0 ? ` · ${halFormatSize(item.size)}` : ""}
+                      </div>
+                    </div>
                     <a
-                      class="hal-media-download"
+                      class="hal-media-download-bar"
                       href={`https://drive.google.com/uc?export=download&id=${item.driveFileId}`}
                       target="_blank"
                       rel="noreferrer"
-                      title="Download"
-                      aria-label="Download"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      ↓
+                      ↓ Download
                     </a>
                   </div>
-                  <div class="hal-media-info">
-                    <div class="hal-media-name">{item.name}</div>
-                    <div class="hal-media-meta">
-                      {item.source === "note" ? item.context : item.context}
-                      {item.size > 0 ? ` · ${halFormatSize(item.size)}` : ""}
-                    </div>
-                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {halConfirmClearAllMedia && (
+            <div class="hal-dialog-scrim" onClick={() => setHalConfirmClearAllMedia(false)}>
+              <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+                <p class="hal-dialog-title">Delete all {halMediaItems.length} media items?</p>
+                <p class="hal-dialog-body">
+                  Clipboard images are deleted outright; note attachments are unlinked from their notes
+                  (the notes themselves aren't touched). This can't be undone.
+                </p>
+                <div class="hal-dialog-actions">
+                  <button class="hal-dialog-btn hal-dialog-btn-cancel" onClick={() => setHalConfirmClearAllMedia(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    class="hal-dialog-btn hal-dialog-btn-danger"
+                    onClick={() => {
+                      setHalConfirmClearAllMedia(false);
+                      halHandleDeleteMediaItems(halMediaItems);
+                    }}
+                  >
+                    Delete all
+                  </button>
                 </div>
-              ))}
+              </div>
+            </div>
+          )}
+
+          {halConfirmDeleteMediaSelected && (
+            <div class="hal-dialog-scrim" onClick={() => setHalConfirmDeleteMediaSelected(false)}>
+              <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+                <p class="hal-dialog-title">
+                  Delete {halMediaSelectedKeys.size} item{halMediaSelectedKeys.size === 1 ? "" : "s"}?
+                </p>
+                <p class="hal-dialog-body">This can't be undone.</p>
+                <div class="hal-dialog-actions">
+                  <button
+                    class="hal-dialog-btn hal-dialog-btn-cancel"
+                    onClick={() => setHalConfirmDeleteMediaSelected(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="hal-dialog-btn hal-dialog-btn-danger"
+                    onClick={() => {
+                      const items = halMediaItems.filter((item) => halMediaSelectedKeys.has(`${item.source}-${item.driveFileId}`));
+                      setHalConfirmDeleteMediaSelected(false);
+                      setHalMediaSelectMode(false);
+                      setHalMediaSelectedKeys(new Set());
+                      halHandleDeleteMediaItems(items);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
