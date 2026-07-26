@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.IntentCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.firebase.auth.FirebaseAuth
 import com.hal.ctrlfreak.auth.halAuth
 import com.hal.ctrlfreak.auth.halRequestDriveAuthorization
@@ -101,6 +102,7 @@ class HalMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.d("HalShare", "onCreate savedInstanceState=${savedInstanceState != null} intent.action=${intent?.action} taskId=$taskId")
         halCurrentIntent = intent
         setContent {
             CfTheme {
@@ -111,8 +113,29 @@ class HalMainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        android.util.Log.d("HalShare", "onNewIntent action=${intent.action} taskId=$taskId")
         setIntent(intent)
         halCurrentIntent = intent
+    }
+
+    override fun onResume() {
+        super.onResume()
+        android.util.Log.d("HalShare", "onResume taskId=$taskId")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        android.util.Log.d("HalShare", "onPause taskId=$taskId isFinishing=$isFinishing")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        android.util.Log.d("HalShare", "onStop taskId=$taskId isFinishing=$isFinishing isChangingConfigurations=$isChangingConfigurations")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        android.util.Log.d("HalShare", "onDestroy taskId=$taskId isFinishing=$isFinishing isChangingConfigurations=$isChangingConfigurations")
     }
 }
 
@@ -134,7 +157,7 @@ private fun halIsOnline(context: Context): Boolean {
 }
 
 @Composable
-fun HalApp(activity: Activity, sharedIntent: Intent?) {
+fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -316,17 +339,46 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     // §5 — share-sheet target. Waits for auth if needed, adds silently,
     // routes to Clipboard unless the user is mid-edit in Notes (then just
     // a snackbar with a "View" action instead of yanking them away).
+    //
+    // The actual upload work runs on activity.lifecycleScope, NOT inside
+    // this LaunchedEffect's own coroutine. Confirmed via logging (onCreate/
+    // onPause/onDestroy) that the Activity itself was never destroyed when
+    // shares from some apps silently failed — but the LaunchedEffect's
+    // coroutine still died with LeftCompositionCancellationException well
+    // before any lifecycle callback fired, meaning something was churning
+    // the *composition* specifically (multiple ActivityResultLaunchers
+    // registering during a cold start from a SEND intent looks like the
+    // trigger) while the Activity stayed alive throughout. lifecycleScope
+    // is tied to the Activity, not the composition, so it isn't affected by
+    // that churn.
     LaunchedEffect(halUser, pendingShareIntent) {
-        val uid = halUser?.uid ?: return@LaunchedEffect
         val intent = pendingShareIntent ?: return@LaunchedEffect
+        val uid = halUser?.uid
+        if (uid == null) {
+            android.util.Log.w("HalShare", "share intent present but halUser is null — bailing, will retry once auth resolves: $intent")
+            return@LaunchedEffect
+        }
+        pendingShareIntent = null
+        android.util.Log.d("HalShare", "processing share intent: action=${intent.action} type=${intent.type} extras=${intent.extras}")
+        activity.lifecycleScope.launch outer@{
         try {
+            // Tracked explicitly rather than assumed — openInputStream can
+            // return null (no exception) for some providers/URI edge cases,
+            // and the previous version fell through to a false "Added to
+            // clipboard" success toast whenever that happened, silently
+            // sharing nothing while claiming it worked.
+            var pushedAny = false
+
             if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
                 val uris = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
-                val token = if (uris.isNotEmpty()) halEnsureDriveAccessToken() else null
-                for ((index, uri) in uris.withIndex()) {
-                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
-                    val driveFileId = halUploadFileToDrive(token!!, bytes, "image/png", "hal-share-${System.currentTimeMillis()}-$index.png")
-                    halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
+                if (uris.isNotEmpty()) {
+                    val token = halEnsureDriveAccessToken()
+                    for ((index, uri) in uris.withIndex()) {
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: continue
+                        val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-share-${System.currentTimeMillis()}-$index.png")
+                        halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
+                        pushedAny = true
+                    }
                 }
             } else {
                 val sharedImageUri = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
@@ -338,12 +390,21 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                         val token = halEnsureDriveAccessToken()
                         val driveFileId = halUploadFileToDrive(token, bytes, "image/png", "hal-share-${System.currentTimeMillis()}.png")
                         halPushClip(uid, HalClipItem(kind = HalClipKind.IMAGE, driveFileId = driveFileId, originDevice = HalDevice.ANDROID))
+                        pushedAny = true
                     }
-                } else if (!sharedText.isNullOrEmpty()) {
+                }
+                if (!pushedAny && !sharedText.isNullOrEmpty()) {
                     halPushClip(uid, HalClipItem(kind = HalClipKind.TEXT, text = sharedText, originDevice = HalDevice.ANDROID))
+                    pushedAny = true
                 }
             }
-            pendingShareIntent = null
+
+            if (!pushedAny) {
+                android.util.Log.w("HalShare", "nothing pushed — no readable image/text found in intent: $intent")
+                halShowSnackbar("Couldn't read what was shared — try again", CfSnackbarKind.Error)
+                return@outer
+            }
+            android.util.Log.d("HalShare", "share pushed successfully")
 
             if (editingNoteId == null && !isCreatingNote) {
                 tab = HalTab.CLIPBOARD
@@ -355,8 +416,9 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
                 }
             }
         } catch (e: Exception) {
-            pendingShareIntent = null
+            android.util.Log.e("HalShare", "share handling threw", e)
             halShowSnackbar("Couldn't sync — check your connection", CfSnackbarKind.Error)
+        }
         }
     }
 
@@ -371,6 +433,7 @@ fun HalApp(activity: Activity, sharedIntent: Intent?) {
     }
 
     if (halUser == null) {
+        android.util.Log.w("HalShare", "rendering sign-in screen — halUser is null at composition time, pendingShareIntent=$pendingShareIntent")
         CfSignInScreen(
             busy = signInBusy,
             error = signInError,
