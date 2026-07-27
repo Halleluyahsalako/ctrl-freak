@@ -1,5 +1,7 @@
 package com.hal.ctrlfreak.data
 
+import com.google.firebase.firestore.Exclude
+
 // Mirrors shared/schema.ts field-for-field — see ARCHITECTURE.md §2.
 // Firestore collections: hal_clipItems, hal_notes, hal_categories, under
 // /users/{uid}/... (see ../../../../../firestore.rules at the repo root).
@@ -25,7 +27,7 @@ object HalDevice {
 }
 
 data class HalClipItem(
-    val id: String = "",
+    @get:Exclude val id: String = "",
     val kind: String = HalClipKind.TEXT,
     val text: String? = null,
     val driveFileId: String? = null,
@@ -42,7 +44,7 @@ data class HalAttachment(
 )
 
 data class HalNote(
-    val id: String = "",
+    @get:Exclude val id: String = "",
     val title: String = "",
     val body: String = "", // markdown
     val categoryId: String? = null,
@@ -52,7 +54,7 @@ data class HalNote(
 )
 
 data class HalCategory(
-    val id: String = "",
+    @get:Exclude val id: String = "",
     val name: String = "",
     val color: String = "",
 )
