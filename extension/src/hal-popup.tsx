@@ -75,6 +75,16 @@ function HalPopup() {
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
+  // Detects landing in a real tab (via halOpenOrFocusTab, or a bookmark)
+  // instead of the actual toolbar popup, so the fixed-width card can be
+  // centered in a full page instead of stuck in the corner. See the
+  // .hal-fullpage rules in hal-popup.html.
+  useEffect(() => {
+    chrome.windows.getCurrent((win) => {
+      if (win.type !== "popup") document.body.classList.add("hal-fullpage");
+    });
+  }, []);
+
   useEffect(() => {
     if (!halUser) {
       setHalClips([]);
