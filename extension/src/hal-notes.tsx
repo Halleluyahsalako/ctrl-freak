@@ -348,19 +348,30 @@ function HalNotesApp() {
         noteRemovals.get(item.noteId)!.add(item.driveFileId);
       }
     }
+    console.log("hal: deleting media items", { items, clipIds, noteRemovals: [...noteRemovals.entries()] });
     try {
-      if (clipIds.length > 0) await halDeleteClips(halUser.uid, clipIds);
+      if (clipIds.length > 0) {
+        await halDeleteClips(halUser.uid, clipIds);
+        console.log("hal: halDeleteClips resolved for", clipIds);
+      }
       for (const [noteId, removeIds] of noteRemovals) {
         const note = halNotes.find((n) => n.id === noteId);
-        if (!note) continue;
+        if (!note) {
+          console.warn("hal: note not found for media delete, skipping", noteId);
+          continue;
+        }
+        const nextAttachments = note.attachments.filter((a) => !removeIds.has(a.driveFileId));
+        console.log("hal: updating note attachments", { noteId, before: note.attachments, removeIds: [...removeIds], after: nextAttachments });
         await halUpdateNote(halUser.uid, noteId, {
           title: note.title,
           body: note.body,
           categoryId: note.categoryId,
-          attachments: note.attachments.filter((a) => !removeIds.has(a.driveFileId)),
+          attachments: nextAttachments,
           pinned: note.pinned,
         });
+        console.log("hal: halUpdateNote resolved for", noteId);
       }
+      console.log("hal: media delete complete");
       halToast(`Deleted ${items.length} item${items.length === 1 ? "" : "s"}`, "neutral");
     } catch (err) {
       console.error("hal:", err);
