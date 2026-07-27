@@ -135,6 +135,14 @@ function HalNotesApp() {
   // still gets created correctly in Firestore, it just isn't force-selected
   // out from under a different draft the user has since moved on to.
   const halDraftTokenRef = useRef(0);
+  // The autosave effect fires on any change to title/body/etc — including
+  // the one-time change that happens just from *opening* a note (its saved
+  // content flowing into local state for the first time). Without this
+  // guard, opening any existing note immediately flashed the badge through
+  // Draft -> Saving -> Saved and re-wrote the note with its own unchanged
+  // content. Set right before halSelectNote's state writes; the autosave
+  // effect consumes and clears it on its very next run.
+  const halJustOpenedRef = useRef(false);
 
   useEffect(() => onAuthStateChanged(halAuth, setHalUser), []);
 
@@ -168,6 +176,10 @@ function HalNotesApp() {
   // local state with nowhere to belong.
   useEffect(() => {
     if (!halUser || !halHasSelection) return;
+    if (halJustOpenedRef.current) {
+      halJustOpenedRef.current = false;
+      return;
+    }
     if (!halTitle.trim() && !halBody.trim() && halAttachments.length === 0) return;
     setHalSaveStatus("unsaved");
     const startToken = halDraftTokenRef.current;
@@ -386,6 +398,7 @@ function HalNotesApp() {
 
   function halSelectNote(note: HalNote | null) {
     halDraftTokenRef.current += 1;
+    halJustOpenedRef.current = true;
     setHalSelectedNoteId(note?.id ?? null);
     setHalHasSelection(true);
     setHalTitle(note?.title ?? "");
@@ -671,8 +684,17 @@ function HalNotesApp() {
         </div>
       </div>
 
-      {halView === "media" ? (
-        <div class="hal-media-view">
+      {
+        // Both hal-media-view and hal-layout are ALWAYS mounted (display
+        // toggled, not conditionally rendered) — the editor container inside
+        // hal-layout must never leave the DOM. It did before this fix:
+        // switching to Media removed hal-layout (and the Tiptap container
+        // div) entirely; switching back created a *new* empty container,
+        // but the live Tiptap Editor instance stayed bound to the old,
+        // now-detached one, so the body silently stopped rendering/editing
+        // for the rest of the session after the first Media tab visit.
+      }
+      <div class="hal-media-view" style={halView === "media" ? undefined : { display: "none" }}>
           <div class="hal-toolbar-row">
             <p class="hal-count-label">{halMediaItems.length} items</p>
             <div class="hal-toolbar-actions">
@@ -856,8 +878,7 @@ function HalNotesApp() {
             </div>
           )}
         </div>
-      ) : (
-      <div class="hal-layout">
+      <div class="hal-layout" style={halView === "notes" ? undefined : { display: "none" }}>
         <aside class="hal-sidebar">
           <div class="hal-search-wrap">
             <span class="hal-search-icon">⌕</span>
@@ -1335,7 +1356,6 @@ function HalNotesApp() {
             </div>
           </section>
       </div>
-      )}
 
       {halShowDeleteConfirm && (
         <div class="hal-dialog-scrim" onClick={() => setHalShowDeleteConfirm(false)}>
