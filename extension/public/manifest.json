@@ -22,7 +22,7 @@
     "service_worker": "hal-background.js",
     "type": "module"
   },
-  "permissions": ["storage", "identity", "clipboardRead", "clipboardWrite"],
+  "permissions": ["storage", "identity", "clipboardRead", "clipboardWrite", "tabs"],
   "host_permissions": [
     "https://*.googleapis.com/*",
     "https://*.firebaseio.com/*"
