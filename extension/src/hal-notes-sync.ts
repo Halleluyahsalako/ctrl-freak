@@ -72,7 +72,11 @@ export function halSubscribeToNotes(
 ): () => void {
   const halNotesQuery = query(halNotesCollection(uid), orderBy("updatedAt", "desc"));
   return onSnapshot(halNotesQuery, (snapshot) => {
-    onChange(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as HalNote));
+    // id spread last — see hal-sync.ts's identical fix. A note ever
+    // touched by the (now-fixed) Android write path can still have a
+    // stray "id": "" stored inside its own document body; this must never
+    // be allowed to shadow the real Firestore document id.
+    onChange(snapshot.docs.map((d) => ({ ...d.data(), id: d.id }) as HalNote));
   });
 }
 
@@ -95,6 +99,6 @@ export function halSubscribeToCategories(
 ): () => void {
   const halCategoriesQuery = query(halCategoriesCollection(uid), orderBy("name"));
   return onSnapshot(halCategoriesQuery, (snapshot) => {
-    onChange(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as HalCategory));
+    onChange(snapshot.docs.map((d) => ({ ...d.data(), id: d.id }) as HalCategory));
   });
 }

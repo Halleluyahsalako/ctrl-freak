@@ -78,7 +78,11 @@ export function halSubscribeToClips(
 
   return onSnapshot(halRecentClipsQuery, (snapshot) => {
     const clips = snapshot.docs.map(
-      (d) => ({ id: d.id, ...d.data() }) as HalClipItem,
+      // id spread last, deliberately — a stray "id" field inside the
+      // document body (Android's Firestore serializer used to write one,
+      // see HalSchema.kt's @get:Exclude fix) must never be able to shadow
+      // the real Firestore document id.
+      (d) => ({ ...d.data(), id: d.id }) as HalClipItem,
     );
     onChange(clips);
   });
