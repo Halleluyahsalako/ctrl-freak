@@ -5,9 +5,29 @@
     <title>Ctrl+Freak</title>
     <link rel="stylesheet" href="/src/hal-tokens.css" />
     <style>
+      html {
+        background: var(--bg);
+      }
       body {
         width: 360px;
         min-height: 220px;
+      }
+      /* Applied via JS once we know this loaded as a full tab (not the
+         real toolbar popup) — chrome.windows.getCurrent().type !== "popup".
+         Without this, a 360px-wide body just sits pinned to the top-left
+         corner of a full browser tab with the rest of the page a dead
+         unstyled void. */
+      body.hal-fullpage {
+        width: 100%;
+        min-height: 100vh;
+        box-sizing: border-box;
+        display: flex;
+        justify-content: center;
+        padding-top: 48px;
+      }
+      body.hal-fullpage .hal-popup-frame {
+        width: 360px;
+        height: fit-content;
       }
       .hal-popup-frame {
         background: var(--bg);
