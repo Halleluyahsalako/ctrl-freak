@@ -13,7 +13,8 @@ import { HalFontSize } from "./hal-font-size";
 import { halAuth } from "./hal-firebase";
 import { halGetValidAccessToken } from "./hal-auth";
 import { halUploadFileToDrive, halFetchDriveFileBlob } from "./hal-drive";
-import { halSubscribeToClips, halDeleteClips } from "./hal-sync";
+import { halReadClipboardSmart, halWriteClipboardText, halWriteImageToClipboard } from "./hal-clipboard";
+import { halSubscribeToClips, halDeleteClips, halPushClip, halSetClipPinned, halClearAllClips } from "./hal-sync";
 import {
   halCreateNote,
   halUpdateNote,
@@ -25,8 +26,27 @@ import {
   halSubscribeToCategories,
 } from "./hal-notes-sync";
 import { useHalToast, HalToast } from "./hal-toast";
-import { HalIconPin, HalIconPaperclip, HalIconCheck, HalIconExternalLink, HalIconImage } from "./hal-icons";
+import {
+  HalIconPin,
+  HalIconPaperclip,
+  HalIconCheck,
+  HalIconImage,
+  HalIconClipboardPlus,
+  HalIconClipboardOff,
+  HalIconDesktop,
+  HalIconMobile,
+} from "./hal-icons";
 import type { HalNote, HalCategory, HalAttachment, HalClipItem } from "@shared/schema";
+
+const HAL_CODE_LIKE = /^\S+$/;
+
+function halClipRelativeTime(createdAt: number): string {
+  const minutes = Math.floor((Date.now() - createdAt) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / (24 * 60))}d`;
+}
 
 // docs/ctrl-freak-extension-ui-spec.md §3
 
@@ -52,20 +72,6 @@ function halFormatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Focuses an already-open ctrl+freak tab instead of piling up a new one
-// every time "clipboard" is clicked.
-async function halOpenOrFocusTab(pageUrl: string) {
-  const fullUrl = chrome.runtime.getURL(pageUrl);
-  const existing = await chrome.tabs.query({ url: fullUrl });
-  const tab = existing[0];
-  if (tab?.id != null) {
-    await chrome.tabs.update(tab.id, { active: true });
-    if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
-  } else {
-    await chrome.tabs.create({ url: fullUrl });
-  }
-}
-
 function halRelativeTime(updatedAt: number): string {
   const minutes = Math.floor((Date.now() - updatedAt) / 60_000);
   if (minutes < 1) return "just now";
@@ -76,7 +82,15 @@ function halRelativeTime(updatedAt: number): string {
 
 function HalNotesApp() {
   const [halUser, setHalUser] = useState<User | null>(null);
-  const [halView, setHalView] = useState<"notes" | "media">("notes");
+  const [halView, setHalView] = useState<"notes" | "media" | "clipboard">("notes");
+  const [halClipCaption, setHalClipCaption] = useState("");
+  const [halClipSyncBusy, setHalClipSyncBusy] = useState(false);
+  const [halClipUploadBusy, setHalClipUploadBusy] = useState(false);
+  const [halClipSelectMode, setHalClipSelectMode] = useState(false);
+  const [halClipSelectedIds, setHalClipSelectedIds] = useState<Set<string>>(new Set());
+  const [halConfirmClearAllClips, setHalConfirmClearAllClips] = useState(false);
+  const [halConfirmDeleteSelectedClips, setHalConfirmDeleteSelectedClips] = useState(false);
+  const halClipFileInputRef = useRef<HTMLInputElement>(null);
   const [halNotes, setHalNotes] = useState<HalNote[]>([]);
   const [halClips, setHalClips] = useState<HalClipItem[]>([]);
   const [halMediaThumbs, setHalMediaThumbs] = useState<Record<string, string>>({});
@@ -174,6 +188,60 @@ function HalNotesApp() {
   // gives this something to save, which creates the real Firestore doc and
   // points halSelectedNoteId at it, so the attachment isn't just sitting in
   // local state with nowhere to belong.
+  // Shared by the debounced autosave timer AND halSelectNote's flush-on-
+  // navigate-away — extracted so both paths save through the exact same
+  // create-vs-update/race-guard logic instead of duplicating it.
+  async function halSaveNow(
+    uid: string,
+    title: string,
+    body: string,
+    categoryId: string,
+    attachments: HalAttachment[],
+    pinned: boolean,
+  ) {
+    const startToken = halDraftTokenRef.current;
+    setHalSaveStatus("saving");
+    const payload = {
+      title: title.trim() || "Untitled note",
+      body,
+      categoryId: categoryId || undefined,
+      attachments,
+      pinned,
+    };
+    try {
+      const currentId = halSelectedNoteIdRef.current;
+      if (currentId) {
+        await halUpdateNote(uid, currentId, payload);
+      } else if (!halCreatingNoteRef.current) {
+        halCreatingNoteRef.current = true;
+        try {
+          const newId = await halCreateNote(uid, payload);
+          // Only wire the new id into the current draft if the user
+          // hasn't switched to a different note/blank draft while this
+          // create was in flight — the note is safely saved either way,
+          // this just avoids stealing selection out from under them.
+          if (halDraftTokenRef.current === startToken) {
+            halSelectedNoteIdRef.current = newId;
+            setHalSelectedNoteId(newId);
+          }
+        } finally {
+          halCreatingNoteRef.current = false;
+        }
+      }
+      // else: a create from an earlier debounce tick is already in
+      // flight — skip this tick rather than race it into a duplicate
+      // note. The next autosave (or the trailing one once typing stops)
+      // will pick up the latest content once halSelectedNoteIdRef is set.
+      if (halDraftTokenRef.current === startToken) {
+        setHalUpdatedAt(Date.now());
+        setHalSaveStatus("saved");
+      }
+    } catch (err) {
+      console.error("hal:", err);
+      if (halDraftTokenRef.current === startToken) setHalSaveStatus("unsaved");
+    }
+  }
+
   useEffect(() => {
     if (!halUser || !halHasSelection) return;
     if (halJustOpenedRef.current) {
@@ -182,48 +250,8 @@ function HalNotesApp() {
     }
     if (!halTitle.trim() && !halBody.trim() && halAttachments.length === 0) return;
     setHalSaveStatus("unsaved");
-    const startToken = halDraftTokenRef.current;
-    const timer = window.setTimeout(async () => {
-      setHalSaveStatus("saving");
-      const payload = {
-        title: halTitle.trim() || "Untitled note",
-        body: halBody,
-        categoryId: halNoteCategoryId || undefined,
-        attachments: halAttachments,
-        pinned: halNotePinned,
-      };
-      try {
-        const currentId = halSelectedNoteIdRef.current;
-        if (currentId) {
-          await halUpdateNote(halUser.uid, currentId, payload);
-        } else if (!halCreatingNoteRef.current) {
-          halCreatingNoteRef.current = true;
-          try {
-            const newId = await halCreateNote(halUser.uid, payload);
-            // Only wire the new id into the current draft if the user
-            // hasn't switched to a different note/blank draft while this
-            // create was in flight — the note is safely saved either way,
-            // this just avoids stealing selection out from under them.
-            if (halDraftTokenRef.current === startToken) {
-              halSelectedNoteIdRef.current = newId;
-              setHalSelectedNoteId(newId);
-            }
-          } finally {
-            halCreatingNoteRef.current = false;
-          }
-        }
-        // else: a create from an earlier debounce tick is already in
-        // flight — skip this tick rather than race it into a duplicate
-        // note. The next autosave (or the trailing one once typing stops)
-        // will pick up the latest content once halSelectedNoteIdRef is set.
-        if (halDraftTokenRef.current === startToken) {
-          setHalUpdatedAt(Date.now());
-          setHalSaveStatus("saved");
-        }
-      } catch (err) {
-        console.error("hal:", err);
-        if (halDraftTokenRef.current === startToken) setHalSaveStatus("unsaved");
-      }
+    const timer = window.setTimeout(() => {
+      halSaveNow(halUser.uid, halTitle, halBody, halNoteCategoryId, halAttachments, halNotePinned);
     }, 700);
     halAutosaveTimerRef.current = timer;
     return () => clearTimeout(timer);
@@ -379,6 +407,112 @@ function HalNotesApp() {
     }
   }
 
+  // ---- Clipboard tab (embedded — no more separate hal-popup.html tab for
+  // this direction, which was the actual "why does clipboard open in a new
+  // tab" complaint) ----
+
+  async function halHandleClipSyncNow() {
+    if (!halUser) return;
+    setHalClipSyncBusy(true);
+    try {
+      let read;
+      try {
+        read = await halReadClipboardSmart();
+      } catch (err) {
+        console.error("hal: clipboard read failed", err);
+        halToast("Couldn't read the clipboard — check the browser's clipboard permission", "error");
+        return;
+      }
+      if (!read) {
+        halToast("Clipboard's empty — nothing to sync", "neutral");
+        return;
+      }
+      const caption = halClipCaption.trim();
+      if (read.kind === "text") {
+        await halPushClip(halUser.uid, { kind: "text", text: read.text, pinned: false, originDevice: "browser" });
+      } else {
+        const accessToken = await halGetValidAccessToken();
+        const ext = read.mimeType.split("/")[1] ?? "png";
+        const driveFileId = await halUploadFileToDrive(accessToken, read.blob, `hal-clip-${Date.now()}.${ext}`);
+        await halPushClip(halUser.uid, { kind: "image", driveFileId, text: caption || undefined, pinned: false, originDevice: "browser" });
+      }
+      setHalClipCaption("");
+      halToast("Synced 1 item", "success");
+    } catch (err) {
+      console.error("hal: clip sync failed", err);
+      halToast("Couldn't sync — check your connection", "error");
+    } finally {
+      setHalClipSyncBusy(false);
+    }
+  }
+
+  async function halHandleClipFileUpload(e: Event) {
+    if (!halUser) return;
+    const file = (e.target as HTMLInputElement).files?.[0];
+    (e.target as HTMLInputElement).value = "";
+    if (!file) return;
+    setHalClipUploadBusy(true);
+    try {
+      const accessToken = await halGetValidAccessToken();
+      const driveFileId = await halUploadFileToDrive(accessToken, file, file.name);
+      const caption = halClipCaption.trim();
+      await halPushClip(halUser.uid, {
+        kind: file.type.startsWith("image/") ? "image" : "file",
+        driveFileId,
+        text: caption || file.name,
+        pinned: false,
+        originDevice: "browser",
+      });
+      setHalClipCaption("");
+      halToast("Uploaded", "success");
+    } catch (err) {
+      console.error("hal: clip upload failed", err);
+      halToast("Couldn't sync — check your connection", "error");
+    } finally {
+      setHalClipUploadBusy(false);
+    }
+  }
+
+  async function halHandleClipTogglePin(e: Event, clip: HalClipItem) {
+    e.stopPropagation();
+    if (!halUser) return;
+    try {
+      await halSetClipPinned(halUser.uid, clip.id, !clip.pinned);
+    } catch (err) {
+      console.error("hal:", err);
+      halToast("Couldn't sync — check your connection", "error");
+    }
+  }
+
+  async function halHandleClipCardClick(clip: HalClipItem) {
+    if (halClipSelectMode) {
+      setHalClipSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(clip.id)) next.delete(clip.id);
+        else next.add(clip.id);
+        return next;
+      });
+      return;
+    }
+    try {
+      if (clip.kind === "file" && clip.driveFileId) {
+        window.open(`https://drive.google.com/file/d/${clip.driveFileId}/view`, "_blank");
+        return;
+      }
+      if (clip.kind === "image" && clip.driveFileId) {
+        const accessToken = await halGetValidAccessToken();
+        const blob = await halFetchDriveFileBlob(accessToken, clip.driveFileId);
+        await halWriteImageToClipboard(blob);
+      } else if (clip.text) {
+        await halWriteClipboardText(clip.text);
+      }
+      halToast("Copied", "success");
+    } catch (err) {
+      console.error("hal:", err);
+      halToast("Couldn't sync — check your connection", "error");
+    }
+  }
+
   useEffect(() => {
     if (halView !== "media" || !halUser) return;
     let cancelled = false;
@@ -408,6 +542,17 @@ function HalNotesApp() {
   }, [halView, halUser, halNotes, halClips]);
 
   function halSelectNote(note: HalNote | null) {
+    // Flush any pending debounced save before switching away — without
+    // this, typing a few words then immediately clicking a different note
+    // (well inside the 700ms debounce window) cancels the pending timer
+    // via the effect's cleanup and the draft is silently lost. Android's
+    // note editor has this exact same shape of autosave and the same
+    // vulnerability; this flush is what makes "step away mid-draft and it
+    // survives like an email draft" actually true here too.
+    if (halUser && halSaveStatus === "unsaved") {
+      if (halAutosaveTimerRef.current) clearTimeout(halAutosaveTimerRef.current);
+      halSaveNow(halUser.uid, halTitle, halBody, halNoteCategoryId, halAttachments, halNotePinned);
+    }
     halDraftTokenRef.current += 1;
     halJustOpenedRef.current = true;
     setHalSelectedNoteId(note?.id ?? null);
@@ -667,10 +812,16 @@ function HalNotesApp() {
           <span class="hal-wordmark">
             ctrl+<span class="hal-accent-part">freak</span>
           </span>
-          <span class="hal-crumb">/ {halView === "notes" ? "notes" : "media"}</span>
+          <span class="hal-crumb">/ {halView}</span>
         </div>
         <div class="hal-topbar-right">
           <div class="hal-view-tabs">
+            <button
+              class={`hal-view-tab ${halView === "clipboard" ? "hal-active" : ""}`}
+              onClick={() => setHalView("clipboard")}
+            >
+              Clipboard
+            </button>
             <button
               class={`hal-view-tab ${halView === "notes" ? "hal-active" : ""}`}
               onClick={() => setHalView("notes")}
@@ -684,9 +835,6 @@ function HalNotesApp() {
               Media
             </button>
           </div>
-          <button class="hal-clipboard-link" onClick={() => halOpenOrFocusTab("hal-popup.html")}>
-            <HalIconExternalLink /> clipboard
-          </button>
           {halView === "notes" && (
             <button class="hal-btn-primary" onClick={() => halSelectNote(null)}>
               + New note
@@ -705,6 +853,200 @@ function HalNotesApp() {
         // now-detached one, so the body silently stopped rendering/editing
         // for the rest of the session after the first Media tab visit.
       }
+      <div class="hal-clipboard-view" style={halView === "clipboard" ? undefined : { display: "none" }}>
+        <div class="hal-clip-tools">
+          <input
+            class="hal-caption-input"
+            placeholder="Add a caption (optional)"
+            value={halClipCaption}
+            onInput={(e) => setHalClipCaption((e.target as HTMLInputElement).value)}
+          />
+          <div class="hal-action-row">
+            <button class="hal-sync-btn" onClick={halHandleClipSyncNow} disabled={halClipSyncBusy || halClipUploadBusy}>
+              {halClipSyncBusy ? "Syncing…" : (
+                <>
+                  <HalIconClipboardPlus /> Sync clipboard
+                </>
+              )}
+            </button>
+            <button
+              class="hal-upload-btn"
+              onClick={() => halClipFileInputRef.current?.click()}
+              disabled={halClipSyncBusy || halClipUploadBusy}
+              aria-label="Upload file"
+              title="Upload a file — no note required"
+            >
+              {halClipUploadBusy ? "…" : <HalIconPaperclip size={15} />}
+            </button>
+            <input ref={halClipFileInputRef} type="file" style={{ display: "none" }} onChange={halHandleClipFileUpload} />
+          </div>
+        </div>
+
+        <div class="hal-toolbar-row">
+          <p class="hal-count-label">{halClips.length} recent · pinned first</p>
+          <div class="hal-toolbar-actions">
+            {halClipSelectMode ? (
+              <button class="hal-text-btn" onClick={() => { setHalClipSelectMode(false); setHalClipSelectedIds(new Set()); }}>
+                Cancel
+              </button>
+            ) : (
+              <>
+                <button class="hal-text-btn" onClick={() => setHalClipSelectMode(true)} disabled={halClips.length === 0}>
+                  Select
+                </button>
+                <button
+                  class="hal-text-btn hal-text-btn-danger"
+                  onClick={() => setHalConfirmClearAllClips(true)}
+                  disabled={halClips.length === 0}
+                >
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {halClipSelectMode && (
+          <div class="hal-select-bar">
+            <span>{halClipSelectedIds.size} selected</span>
+            <button
+              class="hal-text-btn hal-text-btn-danger"
+              disabled={halClipSelectedIds.size === 0}
+              onClick={() => setHalConfirmDeleteSelectedClips(true)}
+            >
+              Delete
+            </button>
+          </div>
+        )}
+
+        {halClips.length === 0 ? (
+          <div class="hal-empty-editor">
+            <div class="hal-empty-well"><HalIconClipboardOff /></div>
+            <p class="hal-empty-title">Nothing synced yet</p>
+            <p class="hal-empty-body">Copy something, then click Sync — it'll show up here and on your phone.</p>
+          </div>
+        ) : (
+          <ul class="hal-clip-feed">
+            {[...halClips.filter((c) => c.pinned), ...halClips.filter((c) => !c.pinned)].map((clip) => (
+              <li
+                key={clip.id}
+                class={`hal-clip-card ${clip.pinned ? "hal-pinned-card" : ""} ${halClipSelectMode ? "hal-select-mode" : ""}`}
+                onClick={() => halHandleClipCardClick(clip)}
+                title={halClipSelectMode ? "Click to select" : "Click to copy"}
+              >
+                {halClipSelectMode && (
+                  <span class={`hal-checkbox ${halClipSelectedIds.has(clip.id) ? "hal-checked" : ""}`}>
+                    {halClipSelectedIds.has(clip.id) && <HalIconCheck size={11} />}
+                  </span>
+                )}
+                <div class="hal-clip-body">
+                  <div class="hal-clip-top">
+                    {clip.kind === "image" ? (
+                      <div class="hal-clip-image-row">
+                        <div class="hal-thumb-well"><HalIconImage /></div>
+                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>{clip.text || "[image]"}</span>
+                      </div>
+                    ) : clip.kind === "file" ? (
+                      <div class="hal-clip-image-row">
+                        <div class="hal-thumb-well"><HalIconPaperclip size={16} /></div>
+                        <span style={{ fontSize: "13px", color: "var(--ink-muted)" }}>{clip.text || "[file]"}</span>
+                      </div>
+                    ) : (
+                      <span class={`hal-clip-text ${clip.text && HAL_CODE_LIKE.test(clip.text) ? "hal-code-like" : ""}`}>
+                        {clip.text}
+                      </span>
+                    )}
+                    {!halClipSelectMode && (
+                      <button
+                        class={`hal-pin-btn ${clip.pinned ? "hal-pinned" : ""}`}
+                        onClick={(e) => halHandleClipTogglePin(e, clip)}
+                        aria-label={clip.pinned ? "Unpin" : "Pin"}
+                      >
+                        <HalIconPin />
+                      </button>
+                    )}
+                  </div>
+                  <div class="hal-clip-meta">
+                    {clip.originDevice === "android" ? <HalIconMobile /> : <HalIconDesktop />}
+                    <span>{clip.originDevice}</span>
+                    <span>·</span>
+                    <span>{halClipRelativeTime(clip.createdAt)}</span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {halConfirmClearAllClips && (
+          <div class="hal-dialog-scrim" onClick={() => setHalConfirmClearAllClips(false)}>
+            <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+              <p class="hal-dialog-title">Clear all clipboard items?</p>
+              <p class="hal-dialog-body">
+                This deletes all {halClips.length} synced item{halClips.length === 1 ? "" : "s"} on every device.
+                This can't be undone.
+              </p>
+              <div class="hal-dialog-actions">
+                <button class="hal-dialog-btn hal-dialog-btn-cancel" onClick={() => setHalConfirmClearAllClips(false)}>
+                  Cancel
+                </button>
+                <button
+                  class="hal-dialog-btn hal-dialog-btn-danger"
+                  onClick={async () => {
+                    if (!halUser) return;
+                    setHalConfirmClearAllClips(false);
+                    try {
+                      await halClearAllClips(halUser.uid);
+                      halToast("Clipboard cleared", "success");
+                    } catch (err) {
+                      console.error("hal:", err);
+                      halToast("Couldn't sync — check your connection", "error");
+                    }
+                  }}
+                >
+                  Clear all
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {halConfirmDeleteSelectedClips && (
+          <div class="hal-dialog-scrim" onClick={() => setHalConfirmDeleteSelectedClips(false)}>
+            <div class="hal-dialog" onClick={(e) => e.stopPropagation()}>
+              <p class="hal-dialog-title">
+                Delete {halClipSelectedIds.size} item{halClipSelectedIds.size === 1 ? "" : "s"}?
+              </p>
+              <p class="hal-dialog-body">This can't be undone.</p>
+              <div class="hal-dialog-actions">
+                <button class="hal-dialog-btn hal-dialog-btn-cancel" onClick={() => setHalConfirmDeleteSelectedClips(false)}>
+                  Cancel
+                </button>
+                <button
+                  class="hal-dialog-btn hal-dialog-btn-danger"
+                  onClick={async () => {
+                    if (!halUser) return;
+                    const ids = [...halClipSelectedIds];
+                    setHalConfirmDeleteSelectedClips(false);
+                    setHalClipSelectMode(false);
+                    setHalClipSelectedIds(new Set());
+                    try {
+                      await halDeleteClips(halUser.uid, ids);
+                      halToast(`Deleted ${ids.length} item${ids.length === 1 ? "" : "s"}`, "success");
+                    } catch (err) {
+                      console.error("hal:", err);
+                      halToast("Couldn't sync — check your connection", "error");
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div class="hal-media-view" style={halView === "media" ? undefined : { display: "none" }}>
           <div class="hal-toolbar-row">
             <p class="hal-count-label">{halMediaItems.length} items</p>
