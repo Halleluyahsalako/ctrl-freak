@@ -107,7 +107,15 @@ function HalPopup() {
     if (!halUser) return;
     setHalBusy(true);
     try {
-      const read = await halReadClipboardSmart();
+      let read;
+      try {
+        read = await halReadClipboardSmart();
+      } catch (err) {
+        console.error("hal: clipboard read failed", err);
+        halToast("Couldn't read the clipboard — check the browser's clipboard permission for this extension", "error");
+        return;
+      }
+      console.log("hal: clipboard read result", read);
       if (!read) {
         halToast("Clipboard's empty — nothing to sync", "neutral");
         return;
@@ -123,13 +131,16 @@ function HalPopup() {
           originDevice: "browser",
         });
       } else {
+        console.log("hal: syncing image, mimeType=", read.mimeType, "size=", read.blob.size);
         const accessToken = await halGetValidAccessToken();
+        console.log("hal: got drive access token");
         const extension = read.mimeType.split("/")[1] ?? "png";
         const driveFileId = await halUploadFileToDrive(
           accessToken,
           read.blob,
           `hal-clip-${Date.now()}.${extension}`,
         );
+        console.log("hal: uploaded to drive, id=", driveFileId);
         await halPushClip(halUser.uid, {
           kind: "image",
           driveFileId,
@@ -141,7 +152,7 @@ function HalPopup() {
       setHalCaption("");
       halToast("Synced 1 item", "success");
     } catch (err) {
-      console.error("hal:", err);
+      console.error("hal: sync failed", err);
       halToast("Couldn't sync — check your connection", "error");
     } finally {
       setHalBusy(false);
