@@ -148,6 +148,7 @@ fun CfNoteEditorScreen(
     onAttachClick: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     isExisting: Boolean,
+    saveStatusLabel: String?,
     onBack: () -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
@@ -173,8 +174,22 @@ fun CfNoteEditorScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = CfColor.InkMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = CfColor.InkMuted)
+                }
+                if (saveStatusLabel != null) {
+                    Box(
+                        modifier = Modifier
+                            .border(1.dp, if (saveStatusLabel == "Saving…") CfColor.Cyan else CfColor.Accent, RoundedCornerShape(CfRadius.Small))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            saveStatusLabel,
+                            style = CfType.Meta.copy(color = if (saveStatusLabel == "Saving…") CfColor.Cyan else CfColor.Accent),
+                        )
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isExisting) {

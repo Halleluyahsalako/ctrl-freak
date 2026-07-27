@@ -90,6 +90,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private enum class HalTab { CLIPBOARD, NOTES, MEDIA }
+private enum class HalSaveStatus { IDLE, UNSAVED, SAVING, SAVED }
 
 class HalMainActivity : ComponentActivity() {
     // A plain `intent` read only happens once, at setContent's first
@@ -181,6 +182,7 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
     var editCategoryId by remember { mutableStateOf<String?>(null) }
     var editPinned by remember { mutableStateOf(false) }
     var editAttachments by remember { mutableStateOf<List<HalAttachment>>(emptyList()) }
+    var saveStatus by remember { mutableStateOf(HalSaveStatus.IDLE) }
     var uploadingAttachmentNames by remember { mutableStateOf<Set<String>>(emptySet()) }
     var mediaThumbs by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     var clipCaption by remember { mutableStateOf("") }
@@ -430,6 +432,7 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
         editCategoryId = note?.categoryId
         editPinned = note?.pinned ?: false
         editAttachments = note?.attachments ?: emptyList()
+        saveStatus = if (note != null) HalSaveStatus.SAVED else HalSaveStatus.IDLE
     }
 
     if (halUser == null) {
@@ -466,7 +469,9 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
     LaunchedEffect(editingNoteId, isCreatingNote, editTitle, editBody, editCategoryId, editPinned, editAttachments) {
         if (editingNoteId == null && !isCreatingNote) return@LaunchedEffect
         if (editTitle.isBlank() && editBody.isBlank() && editAttachments.isEmpty()) return@LaunchedEffect
+        saveStatus = HalSaveStatus.UNSAVED
         kotlinx.coroutines.delay(700)
+        saveStatus = HalSaveStatus.SAVING
         val note = HalNote(
             title = editTitle.trim().ifBlank { "Untitled note" },
             body = editBody,
@@ -481,9 +486,11 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
             } else {
                 editingNoteId = halCreateNote(uid, note)
             }
+            saveStatus = HalSaveStatus.SAVED
         } catch (e: Exception) {
             // Manual Save is still there and will surface the error via its
             // own snackbar if the connection is actually down.
+            saveStatus = HalSaveStatus.UNSAVED
         }
     }
 
@@ -573,6 +580,11 @@ fun HalApp(activity: androidx.activity.ComponentActivity, sharedIntent: Intent?)
                     onAttachClick = { attachmentPickerLauncher.launch("*/*") },
                     onRemoveAttachment = { driveFileId -> editAttachments = editAttachments.filterNot { it.driveFileId == driveFileId } },
                     isExisting = editingNoteId != null,
+                    saveStatusLabel = when (saveStatus) {
+                        HalSaveStatus.UNSAVED -> "Draft"
+                        HalSaveStatus.SAVING -> "Saving…"
+                        else -> null
+                    },
                     onBack = { editingNoteId = null; isCreatingNote = false },
                     onSave = {
                         if (editTitle.isNotBlank()) {
