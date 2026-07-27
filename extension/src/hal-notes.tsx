@@ -110,6 +110,7 @@ function HalNotesApp() {
   const [halMediaSelectedKeys, setHalMediaSelectedKeys] = useState<Set<string>>(new Set());
   const [halConfirmDeleteMediaSelected, setHalConfirmDeleteMediaSelected] = useState(false);
   const [halConfirmClearAllMedia, setHalConfirmClearAllMedia] = useState(false);
+  const [halSaveStatus, setHalSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved">("idle");
   const [, halForceToolbarTick] = useState(0);
 
   const { toast, show: halToast } = useHalToast();
@@ -168,8 +169,10 @@ function HalNotesApp() {
   useEffect(() => {
     if (!halUser || !halHasSelection) return;
     if (!halTitle.trim() && !halBody.trim() && halAttachments.length === 0) return;
+    setHalSaveStatus("unsaved");
     const startToken = halDraftTokenRef.current;
     const timer = window.setTimeout(async () => {
+      setHalSaveStatus("saving");
       const payload = {
         title: halTitle.trim() || "Untitled note",
         body: halBody,
@@ -201,9 +204,13 @@ function HalNotesApp() {
         // flight — skip this tick rather than race it into a duplicate
         // note. The next autosave (or the trailing one once typing stops)
         // will pick up the latest content once halSelectedNoteIdRef is set.
-        if (halDraftTokenRef.current === startToken) setHalUpdatedAt(Date.now());
+        if (halDraftTokenRef.current === startToken) {
+          setHalUpdatedAt(Date.now());
+          setHalSaveStatus("saved");
+        }
       } catch (err) {
         console.error("hal:", err);
+        if (halDraftTokenRef.current === startToken) setHalSaveStatus("unsaved");
       }
     }, 700);
     halAutosaveTimerRef.current = timer;
@@ -388,6 +395,7 @@ function HalNotesApp() {
     setHalNotePinned(note?.pinned ?? false);
     setHalUpdatedAt(note?.updatedAt ?? Date.now());
     setHalOpenMenu(null);
+    setHalSaveStatus(note ? "saved" : "idle");
     halEditorRef.current?.commands.setContent(note?.body ?? "", false);
   }
 
@@ -421,6 +429,7 @@ function HalNotesApp() {
         }
         halSelectNote(null);
       }
+      setHalSaveStatus("saved");
       halToast("Saved", "success");
     } catch (err) {
       console.error("hal:", err);
@@ -1075,6 +1084,11 @@ function HalNotesApp() {
                 )}
               </div>
 
+              {(halSaveStatus === "unsaved" || halSaveStatus === "saving") && (
+                <span class={`hal-save-badge ${halSaveStatus === "saving" ? "hal-save-badge-saving" : ""}`}>
+                  {halSaveStatus === "saving" ? "Saving…" : "Draft"}
+                </span>
+              )}
               <span class="hal-meta-time">edited {halRelativeTime(halUpdatedAt)}</span>
               <div class="hal-meta-spacer" />
 
